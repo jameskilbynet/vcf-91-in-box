@@ -1,39 +1,40 @@
 {
     "version": "9.1.1.0",
-    "vcfInstanceName": "William Lam VCF 9.1.1 Instance",
-    "sddcId": "vcf-m01",
+    "vcfInstanceName": "NTNX1 VCF 9.1.1 Instance",
+    "sddcId": "ntnx1-m01",
     "ceipEnabled": true,
     "skipEsxThumbprintValidation": true,
     "workflowType": "VCF",
     "dnsSpec": {
-        "subdomain": "vcf.lab",
+        "subdomain": "jameskilby.cloud",
         "nameservers": [
-            "192.168.30.29"
+            "192.168.10.250",
+            "192.168.10.251"
         ]
     },
     "ntpServers": [
-        "96.19.94.82"
+        "192.168.100.1"
     ],
     "hostSpecs": [
         {
-            "hostname": "esx01.vcf.lab",
+            "hostname": "uk-bhr-p-ntnx-1.jameskilby.cloud",
             "credentials": {
                 "username": "root",
-                "password": "VMware1!"
+                "password": "VMware123!"
             }
         },
         {
-            "hostname": "esx02.vcf.lab",
+            "hostname": "uk-bhr-p-ntnx-2.jameskilby.cloud",
             "credentials": {
                 "username": "root",
-                "password": "VMware1!"
+                "password": "VMware123!"
             }
         },
         {
-            "hostname": "esx03.vcf.lab",
+            "hostname": "uk-bhr-p-ntnx-3.jameskilby.cloud",
             "credentials": {
                 "username": "root",
-                "password": "VMware1!"
+                "password": "VMware123!"
             }
         }
     ],
@@ -41,11 +42,12 @@
         {
             "networkType": "MANAGEMENT",
             "ipAddressVersion": "IPv4",
-            "subnet": "172.30.0.0/24",
-            "gateway": "172.30.0.1",
-            "vlanId": "30",
+            "subnet": "192.168.100.0/24",
+            "gateway": "192.168.100.1",
+            "vlanId": "100",
             "activeUplinks": [
-                "uplink1"
+                "uplink1",
+                "uplink2"
             ],
             "portGroupKey": "DVPG_FOR_MANAGEMENT",
             "standbyUplinks": [],
@@ -54,11 +56,12 @@
         {
             "networkType": "VM_MANAGEMENT",
             "ipAddressVersion": "IPv4",
-            "subnet": "172.30.0.0/24",
-            "gateway": "172.30.0.1",
-            "vlanId": "30",
+            "subnet": "192.168.100.0/24",
+            "gateway": "192.168.100.1",
+            "vlanId": "100",
             "activeUplinks": [
-                "uplink1"
+                "uplink1",
+                "uplink2"
             ],
             "portGroupKey": "DVPG_FOR_VM_MANAGEMENT",
             "standbyUplinks": [],
@@ -67,18 +70,19 @@
         {
             "networkType": "VMOTION",
             "ipAddressVersion": "IPv4",
-            "subnet": "172.30.40.0/24",
-            "gateway": "172.30.40.1",
-            "vlanId": "40",
+            "subnet": "192.168.101.0/24",
+            "gateway": "192.168.101.1",
+            "vlanId": "101",
             "mtu": 9000,
             "includeIpAddressRanges": [
                 {
-                    "startIpAddress": "172.30.40.10",
-                    "endIpAddress": "172.30.40.20"
+                    "startIpAddress": "192.168.101.11",
+                    "endIpAddress": "192.168.101.20"
                 }
             ],
             "activeUplinks": [
-                "uplink1"
+                "uplink1",
+                "uplink2"
             ],
             "portGroupKey": "DVPG_FOR_VMOTION",
             "standbyUplinks": [],
@@ -87,18 +91,19 @@
         {
             "networkType": "VSAN",
             "ipAddressVersion": "IPv4",
-            "subnet": "172.30.50.0/24",
-            "gateway": "172.30.50.1",
-            "vlanId": "50",
+            "subnet": "192.168.102.0/24",
+            "gateway": "192.168.102.1",
+            "vlanId": "102",
             "mtu": 9000,
             "includeIpAddressRanges": [
                 {
-                    "startIpAddress": "172.30.50.2",
-                    "endIpAddress": "172.30.50.4"
+                    "startIpAddress": "192.168.102.11",
+                    "endIpAddress": "192.168.102.20"
                 }
             ],
             "activeUplinks": [
-                "uplink1"
+                "uplink1",
+                "uplink2"
             ],
             "portGroupKey": "DVPG_FOR_VSAN",
             "standbyUplinks": [],
@@ -108,128 +113,128 @@
     "vspClusterSpec": {
         "ipv4Pool": {
             "ipRange": {
-                "startIpAddress": "172.30.0.33",
-                "endIpAddress": "172.30.0.46"
+                "startIpAddress": "192.168.100.33",
+                "endIpAddress": "192.168.100.46"
             }
         },
-        "platformFqdn": "vcf-msr01.vcf.lab",
-        "instanceFqdn": "vcf-int01.vcf.lab",
-        "fleetFqdn": "vcf-flt01.vcf.lab",
-        "systemUserPassword": "VMware1!VMware1!",
+        "platformFqdn": "uk-bhr-p-vcf-msr-1.jameskilby.cloud",
+        "instanceFqdn": "uk-bhr-p-vcf-int-1.jameskilby.cloud",
+        "fleetFqdn": "uk-bhr-p-vcf-flt-1.jameskilby.cloud",
+        "systemUserPassword": "VMware123!VMware123!",
         "size": "small",
-        "name": "vcf-m01-vmsp-01",
+        "name": "ntnx1-m01-vmsp-01",
         "internalClusterCidrIpv4": "198.18.0.0/15"
     },
     "vcfAutomationSpec": {
         "ipPool": [
-            "172.30.0.65",
-            "172.30.0.66",
-            "172.30.0.67",
-            "172.30.0.68",
-            "172.30.0.69",
-            "172.30.0.70"
+            "192.168.100.65",
+            "192.168.100.66",
+            "192.168.100.67",
+            "192.168.100.68",
+            "192.168.100.69",
+            "192.168.100.70"
         ],
-        "hostname": "auto01.vcf.lab",
-        "platformFqdn": "vcf-asr01.vcf.lab",
-        "adminUserPassword": "VMware1!VMware1!",
-        "nodePrefix": "vcf-m01-node-01",
+        "hostname": "uk-bhr-p-vcfa-1.jameskilby.cloud",
+        "platformFqdn": "uk-bhr-p-vcf-asr-1.jameskilby.cloud",
+        "adminUserPassword": "VMware123!VMware123!",
+        "nodePrefix": "ntnx1-m01-node-01",
         "internalClusterCidr": "198.18.0.0/15",
         "useExistingDeployment": false,
         "size": "small"
     },
     "nsxtSpec": {
-        "transportVlanId": "60",
+        "transportVlanId": "103",
         "ipAddressPoolSpec": {
-            "name": "vcf-m01-cl01-tep01",
+            "name": "ntnx1-m01-cl01-tep01",
             "description": "ESXi Host Overlay TEP IP Pool",
             "subnets": [
                 {
-                    "cidr": "172.30.60.0/24",
-                    "gateway": "172.30.60.1",
+                    "cidr": "192.168.103.0/24",
+                    "gateway": "192.168.103.1",
                     "ipAddressPoolRanges": [
                         {
-                            "start": "172.30.60.10",
-                            "end": "172.30.60.20"
+                            "start": "192.168.103.11",
+                            "end": "192.168.103.30"
                         }
                     ]
                 }
             ]
         },
         "nsxtManagerSize": "medium",
-        "vipFqdn": "nsx01.vcf.lab",
-        "rootNsxtManagerPassword": "VMware1!VMware1!",
-        "nsxtAdminPassword": "VMware1!VMware1!",
-        "nsxtAuditPassword": "VMware1!VMware1!",
+        "vipFqdn": "uk-bhr-p-nsx-1.jameskilby.cloud",
+        "rootNsxtManagerPassword": "VMware123!VMware123!",
+        "nsxtAdminPassword": "VMware123!VMware123!",
+        "nsxtAuditPassword": "VMware123!VMware123!",
         "useExistingDeployment": false,
         "vpcSpec": {
             "dtgwSpec": {
-                "vlan": "70",
-                "gatewayCidr": "172.30.70.1/24",
-                "externalIpBlockCidr": "172.30.70.0/26",
+                "vlan": "106",
+                "gatewayCidr": "192.168.106.1/24",
+                "externalIpBlockCidr": "192.168.106.128/26",
                 "privateTgwIpBlockCidr": "172.31.0.0/16"
             }
         },
         "nsxtManagers": [
             {
-                "hostname": "nsx01a.vcf.lab"
+                "hostname": "uk-bhr-p-nsx-1a.jameskilby.cloud"
             }
         ]
     },
     "vcfOperationsSpec": {
         "applianceSize": "small",
         "useExistingDeployment": false,
-        "adminUserPassword": "VMware1!VMware1!",
+        "adminUserPassword": "VMware123!VMware123!",
         "nodes": [
             {
-                "hostname": "vcf01.vcf.lab",
-                "rootUserPassword": "VMware1!VMware1!",
+                "hostname": "uk-bhr-p-vcfops-1.jameskilby.cloud",
+                "rootUserPassword": "VMware123!VMware123!",
                 "type": "master"
             }
         ]
     },
     "vcfOperationsCollectorSpec": {
         "applianceSize": "small",
-        "hostname": "vcf-proxy01.vcf.lab",
-        "rootUserPassword": "VMware1!VMware1!",
+        "hostname": "uk-bhr-p-vcf-proxy-1.jameskilby.cloud",
+        "rootUserPassword": "VMware123!VMware123!",
         "useExistingDeployment": false
     },
     "licenseServerSpec": {
-        "hostname": "vcf-lic01.vcf.lab"
+        "hostname": "uk-bhr-p-vcf-lic-1.jameskilby.cloud"
     },
     "vidbSpec": {
-        "hostname": "vcf-idb01.vcf.lab"
+        "hostname": "uk-bhr-p-vcf-idb-1.jameskilby.cloud"
     },
     "saltSpec": {},
     "saltRaasSpec": {},
     "telemetryAcceptorSpec": {},
     "fleetLcmSpec": {
-        "hostname": "vcf-flt01.vcf.lab"
+        "hostname": "uk-bhr-p-vcf-flt-1.jameskilby.cloud"
     },
     "sddcLcmSpec": {
-        "hostname": "vcf-int01.vcf.lab"
+        "hostname": "uk-bhr-p-vcf-int-1.jameskilby.cloud"
     },
     "fleetDepotSpec": {},
     "vcenterSpec": {
-        "vcenterHostname": "vc01.vcf.lab",
-        "adminUserSsoPassword": "VMware1!VMware1!",
-        "rootVcenterPassword": "VMware1!VMware1!",
+        "vcenterHostname": "uk-bhr-p-vc-2.jameskilby.cloud",
+        "adminUserSsoPassword": "VMware123!VMware123!",
+        "rootVcenterPassword": "VMware123!VMware123!",
         "vmSize": "small",
         "storageSize": "lstorage",
         "ssoDomain": "vsphere.local",
         "useExistingDeployment": false
     },
     "clusterSpec": {
-        "datacenterName": "VCF-Datacenter",
-        "clusterName": "VCF-Mgmt-Cluster"
+        "datacenterName": "ntnx1-dc",
+        "clusterName": "ntnx1-mgmt-cl01"
     },
     "datastoreSpec": {
         "vsanSpec": {
             "vsanDedup": false,
             "failuresToTolerate": 1,
             "esaConfig": {
-                "enabled": true
+                "enabled": false
             },
-            "datastoreName": "vsanDatastore",
+            "datastoreName": "ntnx1-vsan01",
             "encryptionConfig": {
                 "dataInTransitConfig": {
                     "enable": false
@@ -239,7 +244,7 @@
     },
     "dvsSpecs": [
         {
-            "dvsName": "vcf-m01-cl01-vds01",
+            "dvsName": "ntnx1-m01-cl01-vds01",
             "networks": [
                 "MANAGEMENT",
                 "VM_MANAGEMENT",
@@ -262,15 +267,20 @@
             },
             "vmnicsToUplinks": [
                 {
-                    "id": "vmnic1",
+                    "id": "vmnic2",
                     "uplink": "uplink1"
+                },
+                {
+                    "id": "vmnic3",
+                    "uplink": "uplink2"
                 }
             ],
             "nsxTeamings": [
                 {
                     "policy": "LOADBALANCE_SRCID",
                     "activeUplinks": [
-                        "uplink1"
+                        "uplink1",
+                        "uplink2"
                     ],
                     "standByUplinks": null
                 }
@@ -279,8 +289,8 @@
         }
     ],
     "sddcManagerSpec": {
-        "hostname": "sddcm01.vcf.lab",
-        "localUserPassword": "VMware1!VMware1!",
-        "useExistingDeployment": true
+        "hostname": "uk-bhr-p-sddcm-1.jameskilby.cloud",
+        "localUserPassword": "VMware123!VMware123!",
+        "useExistingDeployment": false
     }
 }

@@ -1,31 +1,35 @@
-$ESXiServer = "172.30.0.10"
-$ESXiRootPassowrd = "VMware1!"
+# The installer VM runs on esx-a, so guest operations go through vCenter
+$VIServer = "uk-bhr-p-vc-1.jameskilby.cloud"
+$VIUsername = "administrator@vsphere.cloud"
+$VIPassword = if ($env:VCENTER_PASSWORD) { $env:VCENTER_PASSWORD } else { (Get-Credential -UserName $VIUsername -Message "vCenter").GetNetworkCredential().Password }
 
-$VCFInstallerVMName = "sddcm01"
-$VCFInstallerFQDN = "sddcm01.vcf.lab"
-$VCFInstallerRootPassword = "VMware1!VMware1!"
+$VCFInstallerVMName = "uk-bhr-p-vcfi-1"
+$VCFInstallerFQDN = "uk-bhr-p-vcfi-1.jameskilby.cloud"
+$VCFInstallerRootPassword = "VMware123!VMware123!"
+$VCFInstallerAdminPassword = "VMware123!VMware123!"
 
 $SSHKeys = ""
 
 # See https://williamlam.com/2026/05/vcf-9-1-comprehensive-vcf-installer-sddc-manager-configuration-workarounds-for-lab-deployments.html for list of configuration overrides
 
 # Configuration overrides to be added to /home/vcf/feature.properties
-$VCFFeatureProperties = @{
-    "feature.vcf.vgl-29121.single.host.domain" = "true"
-    "feature.vcf.vgl-43370.vsan.esa.sddc.managed.disk.claim" = "true"
-}
+# (single-host and vSAN ESA disk-claim flags removed: 3 hosts, vSAN OSA)
+$VCFFeatureProperties = @{}
 
 # Configuration overrides to be added to /etc/vmware/vcf/domainmanager/application.properties
+# Longer timeouts/retries for the Haswell-era CPUs and SATA vSAN
 $VCFDomainManagerProperties = @{
-    "vsan.esa.sddc.managed.disk.claim" = "true"
+    "orchestrator.task.retry.max" = "5"
+    "nsxt.manager.wait.minutes" = "180"
+    "vsp.bootstrap.task.timeout.minutes" = "240"
+    "vsp.bootstrap.command.timeout.minutes" = "200"
 }
 
 # Configuration overrides to be added to /etc/vmware/vcf/operationsmanager/application-prod.properties
-$VCFOperationsManagerProperties = @{
-    "vsan.esa.sddc.managed.disk.claim" = "true"
-}
+$VCFOperationsManagerProperties = @{}
 
-$VCFInstallerOfflineDepot = "http://172.30.50.29:8888"
+# VIS offline depot (uk-bhr-p-vis-1, on esx-a)
+$VCFInstallerOfflineDepot = "http://uk-bhr-p-vis-1.jameskilby.cloud:8081"
 
 #### DO NOT EDIT BEYOND HERE ####
 
@@ -61,7 +65,7 @@ while(1) {
 
 $payload = @{
     "username" = "admin@local"
-    "password" = $VCFInstallerRootPassword
+    "password" = $VCFInstallerAdminPassword
 }
 
 $body = $payload | ConvertTo-Json
@@ -90,8 +94,8 @@ $depotBody = $depotPayload | ConvertTo-Json
 My-Logger "Configuring HTTP Offline Depot for VCF Installer ..."
 $request = Invoke-WebRequest -Uri https://${VCFInstallerFQDN}/v1/system/settings/depot -Method PUT -Body $depotBody -Headers $headers -SkipCertificateCheck
 
-My-Logger "Connecting to ESXi Host $VIServer ..."
-$viConnection = Connect-VIServer $ESXiServer -User root -Password $ESXiRootPassowrd -WarningAction SilentlyContinue
+My-Logger "Connecting to vCenter $VIServer ..."
+$viConnection = Connect-VIServer $VIServer -User $VIUsername -Password $VIPassword -WarningAction SilentlyContinue
 
 $vcfVM = Get-VM -Server $viConnection $VCFInstallerVMName
 
@@ -111,16 +115,16 @@ if($SSHKeys -ne "") {
 }
 
 $vcfDomainConfigFile = "/etc/vmware/vcf/domainmanager/application.properties"
-if($VCFDomainManagerProperties -ne $null) {
+if($VCFDomainManagerProperties.Count -gt 0) {
     $VCFDomainManagerProperties.GetEnumerator() | Foreach-Object {
         $script += "echo $($_.key)=$($_.value) >> ${vcfDomainConfigFile}`n"
     }
 }
 
 $vcfOperationsConfigFile = "/etc/vmware/vcf/operationsmanager/application-prod.properties"
-if($VCFOperationsManagerProperties -ne $null) {
+if($VCFOperationsManagerProperties.Count -gt 0) {
     $VCFOperationsManagerProperties.GetEnumerator() | Foreach-Object {
-        $script += "echo $($_.key)=$($_.value) >> ${vcfDomainConfigFile}`n"
+        $script += "echo $($_.key)=$($_.value) >> ${vcfOperationsConfigFile}`n"
     }
 }
 
@@ -142,5 +146,5 @@ My-Logger "Running configuration shell script on VCF Installer VM ..."
 Invoke-VMScript -ScriptText "bash /tmp/${scriptName}" -VM $vcfVM -GuestUser "root" -GuestPassword $VCFInstallerRootPassword  | Out-Null
 
 
-My-Logger "Disconnecting from ESXi Host $VIServer ..."
+My-Logger "Disconnecting from vCenter $VIServer ..."
 Disconnect-VIServer $viConnection -Confirm:$false

@@ -1,6 +1,6 @@
 # VMware Cloud Foundation (VCF) 9.1.1 in a Box
 
-Deploy a fully functional VMware Cloud Foundation 9.1.1 environment on one, two or three physical ESX hosts, optimized for development and lab use. This setup enables users to explore the full capabilities of VCF 9.1.1, ranging from Fleet Management, Self-Service Automation with Multi-Tenancy to running modern container and AI workloads, all while using minimal compute and storage resources.
+Fork of [lamw/vcf-91-in-box](https://github.com/lamw/vcf-91-in-box), adapted for the 3-node NTNX1 cluster (see [NTNX1 fork](#ntnx1-fork-this-branch)). Upstream: deploy a fully functional VMware Cloud Foundation 9.1.1 environment on one, two or three physical ESX hosts, optimized for development and lab use. This setup enables users to explore the full capabilities of VCF 9.1.1, ranging from Fleet Management, Self-Service Automation with Multi-Tenancy to running modern container and AI workloads, all while using minimal compute and storage resources.
 
 📒 This deployment does not use Nested ESX and instead runs directly on physical hosts, in contrast to the [VCF Holodeck](https://vmware.github.io/Holodeck/) solution.
 
@@ -10,8 +10,7 @@ Deploy a fully functional VMware Cloud Foundation 9.1.1 environment on one, two 
 
 * [Changelog](#changelog)
 * [Bill of Materials (BOM)](#bill-of-materials-bom)
-* [Prerequisites](#prerequisites)
-* [Installation](#installation)
+* [NTNX1 fork](#ntnx1-fork-this-branch)
 * [Post Installation](#post-installation)
 * [Additional Blog Resources](#additional-blog-resources)
 
@@ -56,267 +55,96 @@ Deploy a fully functional VMware Cloud Foundation 9.1.1 environment on one, two 
 
 📒 The above BOM is just an example. You can certainly swap out full systems and/or components that you might already have or prefer alternatives. Just know that you are responsible for adjusting any configuration that may differ from the referenced BOM.
 
-## Prerequisites
+## NTNX1 fork (this branch)
 
-* Minimum 5 VLANs (e.g. 30, 40, 50, 60, 70) for VCF Fleet Deployment
-    * VLAN 30 - Management
-    * VLAN 40 - vMotion
-    * VLAN 50 - vSAN
-    * VLAN 60 - ESX/NSX Edge TEP
-      * Can be used for VLAN-backed VPC (Optional)
-    * VLAN 70
-       * Tier 0 Uplink for Centralized Transit Gateway (Optional)
-       * External Connectivity for Distributed Transit Gateway (Optional)
+This branch adapts William Lam's VCF 9.1.1 in a Box to the three **Nutanix NX (G4/G5)** nodes in the NTNX1 cluster:
+`uk-bhr-p-ntnx-1/2/3`, each with 2× Xeon E5-2640 v3, 256 GB RAM, a 64 GB SATADOM, 960 GB SATA SSDs on an LSI SAS3008, 2× 1GbE (igbn, unused) and 2× 25GbE (i40en vmnic2/3 → mikrotik-sw-1).
+Like upstream, it is **bare metal**: it reinstalls ESX on the nodes. It is not nested, so it's not Holodeck.
 
-* Here are the IP addresses and DNS entries that you will need for initial setup (NSX Edge/VNA and vSphere Supervisor are optional)
+What changed vs upstream:
 
-| Hostname   | FQDN                | IP Address              | Function                                     |
-|------------|---------------------|-------------------------|----------------------------------------------|
-| esx01      | esx01.vcf.lab       | 172.30.0.10             | Physical ESX-1 Server                        |
-| esx02      | esx02.vcf.lab       | 172.30.0.11             | Physical ESX-2 Server                        |
-| esx03      | esx03.vcf.lab       | 172.30.0.12             | Physical ESX-3 Server                        |
-| sddcm01    | sddcm01.vcf.lab     | 172.30.0.18             | VCF Installer / SDDC Manager                 |
-| vc01       | vc01.vcf.lab        | 172.30.0.19             | vCenter Server for Management Domain         |
-| vcf01      | vcf01.vcf.lab       | 172.30.0.20             | VCF Operations                               |
-| vcf-msr01  | vcf-msr01.vcf.lab   | 172.30.0.21             | VCF Management Services Runtime              |
-| vcf-flt01  | vcf-flt01.vcf.lab   | 172.30.0.22             | VCF Fleet Components FQDN                    |
-| vcf-int01  | vcf-int01.vcf.lab   | 172.30.0.23             | VCF Instance Components FQDN                 |
-| vcf-lic01  | vcf-lic01.vcf.lab   | 172.30.0.24             | VCF License Server                           |
-| vcf-log01  | vcf-log01.vcf.lab   | 172.30.0.26             | VCF Operations for Logs (Optional)           |
-| vcf-idb01  | vcf-idb01.vcf.lab   | 172.30.0.27             | VCF Identity Broker                          |
-|            | 172.30.0.32/28      | 172.30.0.33-172.30.0.46 | VCF Management Services Runtime Node IP Pool |
-| nsx01      | nsx01.vcf.lab       | 172.30.0.48             | NSX Manager VIP for Management Domain        |
-| nsx01a     | nsx01a.vcf.lab      | 172.30.0.49             | NSX Manager for Management Domain            |
-| edge01a    | edge01a.vcf.lab     | 172.30.0.50             | NSX Edge 1a for Management Domain (Optional) |
-| edge01b    | edge01b.vcf.lab     | 172.30.0.51             | NSX Edge 1b for Management Domain (Optional) |
-| vna01a     | vna01a.vcf.lab      | 172.30.0.52             | NSX VNA 1a for Management Domain             |
-| vna01b     | vna01b.vcf.lab      | 172.30.0.53             | NSX VNA 1b for Management Domain (Optional)  |
-|            |                     | 172.30.0.54             | NSX Edge VIP (Optional)                      |
-| vcf-proxy01| vcf-proxy01.vcf.lab | 172.30.0.55             | VCF Operations Proxy Collector               |
-| vcf-asr01  | vcf-asr01.vcf.lab   | 172.30.0.56             | VCF Automation Services Runtime              |
-| auto01     | auto01.vcf.lab      | 172.30.0.57             | VCF Automation                               |
-|            | 172.30.0.64/29      | 172.30.0.65-172.30.0.70 | VCF Automation Services Runtime Node IP Pool |
-| sv01       | sv01.vcf.lab        | 172.30.0.80-172.30.0.85 | vSphere Supervisor Node IP Pool              |
+| Area | Upstream (MS-A2) | NTNX1 |
+|---|---|---|
+| Boot / install | USB stick, `ks=usb:` | Per-host ISO over IPMI virtual media, `ks=cdrom:` + `allowLegacyCPU=true` ([scripts/build_ks_isos.sh](scripts/build_ks_isos.sh)) |
+| Install disk | NVMe | 64 GB SATADOM, `--ignoreprereqwarnings` |
+| vSAN | ESA + HCL-bypass flags | **OSA**: Samsung MZ7KM960 = cache, HPE VK0960 = capacity (tagged `capacityFlash` in kickstart); ESA flags removed |
+| NICs | vmnic1, one uplink | vmnic2 + vmnic3, both active |
+| VLANs | 30/40/50/60/70 | 100 mgmt, 101 vMotion, 102 vSAN, 103 host TEP, 106 DTGW external (already live on mikrotik-sw-1, gateways `.1`, SVI MTU 9212) |
+| Mgmt MTU | vSwitch0 + vmk0 at 9000 | vSwitch0 9000 (for the jumbo vmkping validation), vmk0 1500 (the VLAN 100 SVI is 1500) |
+| AMD / NVMe-tiering tweaks | yes | removed (Intel, no NVMe); LRO/TSO-off kept for i40en |
+| VCF Installer | on esx01, reused as SDDC Manager | on **uk-bhr-p-esx-a** (Z840-NVMe1) via vCenter, OVA streamed from the VIS depot; deploys a **new** SDDC Manager (`useExistingDeployment: false`) |
+| Depot | python http :8888 | VIS appliance `http://uk-bhr-p-vis-1.jameskilby.cloud:8081` |
+| Installer overrides | single-host + ESA disk claim | longer NSX/VSP timeouts + retries; also fixes an upstream bug where OperationsManager overrides were written to the DomainManager file |
+| Deployment JSON | 6 samples | [config/three-node-vsan-osa-tep-ntnx1.json](config/three-node-vsan-osa-tep-ntnx1.json) only |
 
-📒 For Distributed Transit Gateway (DTGW) configuration, we can optimize the VLAN 70 network and carve it up into smaller /26 networks rather than consuming an entire block when enabling vSphere Supervisor
-* 172.30.70.0/26
-* 172.30.70.64/26
-* 172.30.70.128/26
-* 172.30.70.192/26
+### ⚠️ Read before starting
 
-## Installation
+* **This is destructive.** It reinstalls ESX on the three SATADOMs and wipes the SSDs. On ntnx-1 that includes `NTNX1-Local` and `NTNX1-Local-Samsung` (≈6 GB used, so check what's on them first). It also ends Holodeck on NTNX1. The VIS depot and HoloRouter are now on esx-a, so they aren't touched.
+* **The CPU is unsupported.** Broadcom discontinued Broadwell-EP in VCF 9.x, and Haswell-EP is older still. `allowLegacyCPU=true` turns the installer's hard stop into a warning; Haswell has the XSAVE instruction ESX requires. Expect future vLCM upgrades to need the same workaround, or to refuse.
+* **The vSAN hardware is off the HCL.** SATA SSDs on an LSI SAS3008 aren't on it, which is why this uses OSA rather than ESA (ESA also misbehaved on these nodes). Acknowledge any HCL warnings during validation.
+* **ntnx-3 only shows 2 SSDs** (it had 3 in September). Raw capacity is 2+2+1 = 5 × 960 GB of capacity tier, about 2.2 TB usable at FTT=1, unevenly spread. Re-seat or replace the missing drive and add it to `KS-ESX03.CFG` first, if you can.
+* The VIS depot returned a `404` for `VCF_SALT_RAAS` 9.1.1.0100 during the Holodeck run. Watch for it at the binary-download step.
 
-0. Update your hardware to the latest vendor firmware
-    * For MS-A2 owners, please follow [these instructions](https://williamlam.com/2025/07/quick-tip-updating-firmware-on-minisforum-ms-a2.html) for firmware
-    * Apply these [these instructions](https://williamlam.com/2026/03/maximizing-vsan-esa-performance-on-minisforum-ms-a2.html) for network optimizations if you are doing a manual installation (already incorporated into ESX kickstart examples)
+### Prerequisites
 
-1. Set up a VCF Offline Depot using the new `VCF Download Tool` by following the [Broadcom documentation](https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/deployment/deploying-a-new-vmware-cloud-foundation-or-vmware-vsphere-foundation-private-cloud-/preparing-your-environment/downloading-binaries-to-the-vcf-installer-appliance/download-install-binaries-to-an-offline-depot.html)
+1. **Remove the three hosts from `uk-bhr-p-vc-1`.** They're in maintenance mode and not responding, so use *Remove from Inventory*.
+2. **Create a VLAN 100 port group on DSwitch** for the installer VM on esx-a. Upstream calls it `DSwitch-VCF-Mgmt`: VLAN 100, default security. esx-a's switch ports already carry VLAN 100 (the `hosts` group on mikrotik-sw-1).
+3. **Create the DNS records** in AD (`jameskilby.cloud`, forward **and** reverse). Create the reverse zone `100.168.192.in-addr.arpa` if it's missing. The ntnx A/PTR records currently point at 192.168.38.24–26 and must be **replaced**. Check that none of the new names already exist.
 
-After downloading the required metadata/binaries, you should have a directory structure like the following:
-```
-PROD
-├── COMP
-│   ├── DEPOT_SERVICE
-│   │   ├── configuration-schema-vcf-fleet-depot-9.1.1.0.25713941.yaml
-│   │   ├── depot-manifest-vcf-fleet-depot-9.1.1.0.25713941.yaml
-│   │   ├── vcf-fleet-depot-9.1.1.0.25713941.tgz
-│   │   └── vcf-fleet-depot-plugin-9.1.1.0.25713941.tgz
-│   ├── ESX_HOST
-│   ├── NSX_T_MANAGER
-│   │   ├── nsx-unified-appliance-9.1.1.0.25691516.ova
-│   │   ├── VMware-NSX-T-9.1.1.0.25691516.vlcp
-│   ├── SDDC_MANAGER_VCF
-│   │   ├── Compatibility
-│   │   │   └── VmwareCompatibilityData.json
-│   │   ├── VCF-SDDC-Manager-Appliance-9.1.1.0.25713928.ova
-│   ├── TELEMETRY_ACCEPTOR
-│   │   ├── configuration-schema-telemetry-acceptor-9.1.1.0.25671600.yaml
-│   │   ├── depot-manifest-telemetry-acceptor-9.1.1.0.25671600.yaml
-│   │   ├── telemetry-acceptor-9.1.1.0.25671600.tgz
-│   │   └── telemetry-acceptor-plugin-9.1.1.0.25671600.tgz
-│   ├── VCENTER
-│   │   ├── VMware-VCSA-all-9.1.1.0.25712839.iso
-│   ├── VCF_FLEET_LCM
-│   │   ├── configuration-schema-vcf-fleet-lcm-9.1.1.0.25713934.yaml
-│   │   ├── depot-manifest-vcf-fleet-lcm-9.1.1.0.25713934.yaml
-│   │   ├── vcf-fleet-lcm-9.1.1.0.25713934.tgz
-│   │   └── vcf-fleet-lcm-plugin-9.1.1.0.25713934.tgz
-│   ├── VCF_LICENSE_SERVER
-│   │   └── Vcf-License-Server-9.1.1.0.25679819.ova
-│   ├── VCF_OPS_CLOUD_PROXY
-│   │   └── Operations-Cloud-Proxy-9.1.1.0.25679891.ova
-│   ├── VCF_SALT
-│   │   ├── configuration-schema-salt-9.1.1.0.25679895.yaml
-│   │   ├── depot-manifest-salt-9.1.1.0.25679895.yaml
-│   │   ├── salt-9.1.1.0.25679895.tgz
-│   │   └── salt-plugin-9.1.1.0.25679895.tgz
-│   ├── VCF_SALT_RAAS
-│   │   ├── configuration-schema-salt-raas-9.1.1.0.25679895.yaml
-│   │   ├── depot-manifest-salt-raas-9.1.1.0.25679895.yaml
-│   │   ├── salt-raas-9.1.1.0.25679895.tgz
-│   │   └── salt-raas-plugin-9.1.1.0.25679895.tgz
-│   ├── VCF_SDDC_LCM
-│   │   ├── configuration-schema-vcf-sddc-lcm-9.1.1.0.25713940.yaml
-│   │   ├── depot-manifest-vcf-sddc-lcm-9.1.1.0.25713940.yaml
-│   │   ├── vcf-sddc-lcm-9.1.1.0.25713940.tgz
-│   │   └── vcf-sddc-lcm-plugin-9.1.1.0.25713940.tgz
-│   ├── VCF_SERVICE_VCD_MIGRATION_BACKEND
-│   │   ├── configuration-schema-vcd-migrator-9.1.1.0.25714559.yaml
-│   │   ├── depot-manifest-vcd-migrator-9.1.1.0.25714559.yaml
-│   │   ├── vcd-migrator-9.1.1.0.25714559.tgz
-│   │   └── vcd-migrator-plugin-9.1.1.0.25714559.tgz
-│   ├── VIDB
-│   │   ├── configuration-schema-vidb-9.1.1.0.25679886.yaml
-│   │   ├── depot-manifest-vidb-9.1.1.0.25679886.yaml
-│   │   ├── vidb-9.1.1.0.25679886.tgz
-│   ├── VRA
-│   │   ├── configuration-schema-vcfa-bundle-9.1.1.0.25714559.yaml
-│   │   ├── depot-manifest-vcfa-bundle-9.1.1.0.25714559.yaml
-│   │   ├── vcfa-bundle-9.1.1.0.25714559.tar
-│   │   ├── vcfa-plugin-9.1.1.0.25714559.tgz
-│   ├── VRLI
-│   │   ├── configuration-schema-operations-logs-9.1.1.0.25679624.yaml
-│   │   ├── depot-manifest-operations-logs-9.1.1.0.25679624.yaml
-│   │   ├── operations-logs-9.1.1.0.25679624.tgz
-│   │   └── operations-logs-plugin-9.1.1.0.25679624.tgz
-│   ├── VROPS
-│   │   ├── Operations-Appliance-9.1.1.0.25679751.ova
-│   └── VSP
-│       ├── configuration-schema-vmsp-platform-9.1.1.0.25714471.yaml
-│       ├── depot-manifest-vmsp-platform-9.1.1.0.25714471.yaml
-│       ├── vcf-services-platform-template-9.1.1.0.25714471.ova
-│       ├── vmsp-cli-9.1.1.0.25714471.tar.gz
-│       ├── vmsp-platform-9.1.1.0.25714471.tar
-│       └── vmsp-plugin-9.1.1.0.25714471.tgz
-├── metadata
-│   ├── Compatibility
-│   │   ├── v1
-│   │   │   └── VmwareCompatibilityData.json
-│   │   └── v2
-│   │       └── VmwareCompatibilityData.json
-│   ├── manifest
-│   │   └── v1
-│   │       └── vcfManifest.json
-│   ├── productVersionCatalog
-│   │   └── v1
-│   │       ├── productVersionCatalog.json
-│   │       └── productVersionCatalog.sig
-│   └── vsan
-│       └── hcl
-│           ├── all.json
-│           └── lastupdatedtime.json
-└── vsan
-    └── hcl
-        ├── all.json
-        └── lastupdatedtime.json
-```
+| Hostname (`.jameskilby.cloud`) | IP | Function |
+|---|---|---|
+| uk-bhr-p-vcfi-1 | 192.168.100.9 | VCF Installer (temporary, on esx-a) |
+| uk-bhr-p-ntnx-1 / -2 / -3 | 192.168.100.11 / .12 / .13 | ESX hosts |
+| uk-bhr-p-sddcm-1 | 192.168.100.18 | SDDC Manager |
+| uk-bhr-p-vc-2 | 192.168.100.19 | Management vCenter (SSO `vsphere.local`) |
+| uk-bhr-p-vcfops-1 | 192.168.100.20 | VCF Operations |
+| uk-bhr-p-vcf-msr-1 | 192.168.100.21 | Management Services Runtime |
+| uk-bhr-p-vcf-flt-1 | 192.168.100.22 | Fleet components |
+| uk-bhr-p-vcf-int-1 | 192.168.100.23 | Instance components |
+| uk-bhr-p-vcf-lic-1 | 192.168.100.24 | License Server |
+| uk-bhr-p-vcf-idb-1 | 192.168.100.27 | Identity Broker |
+| — | 192.168.100.33–46 | MSR node pool |
+| uk-bhr-p-nsx-1 | 192.168.100.48 | NSX VIP |
+| uk-bhr-p-nsx-1a | 192.168.100.49 | NSX Manager |
+| uk-bhr-p-vcf-proxy-1 | 192.168.100.55 | Ops cloud proxy |
+| uk-bhr-p-vcf-asr-1 | 192.168.100.56 | Automation Services Runtime |
+| uk-bhr-p-vcfa-1 | 192.168.100.57 | VCF Automation |
+| — | 192.168.100.65–70 | Automation node pool |
 
-You can host the VCF Offline Depot using a traditional HTTP Web Server (HTTPS is NOT required as the automation in 9.1 will support HTTP). Alternatively, you can simply use Python to serve up the directory (see this [blog post](https://williamlam.com/2025/06/using-http-with-vcf-9-0-installer-for-offline-depot.html)) or even a Synology (see this [blog post](https://williamlam.com/2025/06/vcf-9-0-offline-depot-using-synology.html)).
+Host vmkernel pools: vMotion `192.168.101.11-20`, vSAN `192.168.102.11-20`, TEP `192.168.103.11-30`. DTGW: VLAN 106, gateway `192.168.106.1/24`, external block `192.168.106.128/26`.
 
-2. Create a bootable ESX installer with the ESX ISO (VMware-VMvisor-Installer-9.1.1.0.25714478.x86_64.iso) using [UNetbootin](https://unetbootin.github.io/).
+4. **Pre-flight from something on VLAN 100** (e.g. the installer VM once it's up):
+   * DNS really reaches AD: `dig @1.2.3.4 uk-bhr-p-vc-2.jameskilby.cloud` must *fail*. If it answers, port 53 is being hijacked the same way it is on VLAN 4.
+   * NTP: `ntpdate -q 192.168.100.1` (mikrotik-sw-1 is the lab NTP server).
+   * Depot: `curl -sI http://uk-bhr-p-vis-1.jameskilby.cloud:8081/PROD/metadata/productVersionCatalog/v1/productVersionCatalog.json` returns 200.
+5. Tools on the Mac: `brew install xorriso`, plus [OVFTool](https://developer.broadcom.com/tools/open-virtualization-format-ovf-tool/latest) and PowerCLI.
 
-3. We will perform a scripted installation of ESX (aka ESX Kickstart) to reduce the number of manual post-installation steps.
+### Installation
 
-4. Edit the relevant [Kickstart Files](config/) and replace the following values with your own desired configurations.
-
-💡 To simplify the deployment of multiple ESX hosts using a single USB drive, you can [create a custom UEFI boot menu for ESX](https://williamlam.com/2025/07/custom-uefi-boot-menu-for-esxi-9-0-using-refind.html), allowing you to select specific ESX kickstart configuration files.
-
-📒 To identify the NVMe device label for the ESX installation (e.g. `--disk=<ID>`) and NVMe tiering device (e.g. `NVME_TIERING_DEVICE=`), boot the ESX installer initially, switch to the shell console (ALT+F1), and log in as `root` with a blank password (just press Enter). Enable SSH using `/etc/init.d/SSH start`, identify the IP address, SSH to the in-memory ESX host, and run `vdq -q` to list all storage devices.
-
-In the example [KS-ESX01.CFG](config/KS-ESX01.CFG), the ESX installation disk will be `t10.NVMe____SKHynix_HFS512GEJ9X162N_________________AJEBN74041040C403___00000001` and NVMe Tiering disk will be `t10.NVMe____MTFDLBA1T0THJ2D1BP15ABYY_________________5D19D3500175A000`
-
-![](screenshots/screenshot-1.png)
-
-After creating the bootable ESX installer on your USB device, copy your modified ESX kickstart file(s) into the root directory of the USB device (kickstart file names must be uppercase).
-
-Now, navigate into the USB device under `EFI/BOOT` and edit `BOOT.CFG` updating the `kernelopt` so it matches the following which will run our KS-ESX01.CFG instead of the interactive installation:
-
-```code
-bootstate=0
-title=Loading ESXi installer
-timeout=5
-prefix=
-kernel=/b.b00
-kernelopt=ks=usb:/KS-ESX01.CFG
-modules=jumpstrt.gz --- useropts.gz --- features.gz --- k.b00 --- uc_intel.b00 --- uc_amd.b00 --- uc_hygon.b00 --- vmx.v00 --- vim.v00 --- tpm.v00 --- sb.v00 --- s.v00 --- atlantic.v00 --- bcm_mpi3.v00 --- bnxtnet.v00 --- bnxtroce.v00 --- cndi_igc.v00 --- elxnet.v00 --- i40en.v00 --- iavmd.v00 --- icen.v00 --- igbn.v00 --- intelgpi.v00 --- ionic_cl.v00 --- ionic_en.v00 --- irdman.v00 --- iser.v00 --- ixgben.v00 --- lpfc.v00 --- lpnic.v00 --- lsi_mr3.v00 --- lsi_msgp.v00 --- lsi_msgp.v01 --- ne1000.v00 --- nenic_en.v00 --- nenic.v00 --- nfnic.v00 --- nhpsa.v00 --- nipmi.v00 --- nmlx5_cc.v00 --- nmlx5_co.v00 --- nmlx5_rd.v00 --- ntg3.v00 --- nvme_pci.v00 --- nvmerdma.v00 --- nvmetcp.v00 --- nvmxnet3.v00 --- nvmxnet3.v01 --- pvscsi.v00 --- qat.v00 --- qcnic.v00 --- qedentv.v00 --- qedrntv.v00 --- qfle3.v00 --- qfle3f.v00 --- qfle3i.v00 --- rdmahl.v00 --- rshim_ne.v00 --- rshim.v00 --- sfvmk.v00 --- smartpqi.v00 --- vmkata.v00 --- vmksdhci.v00 --- vmkusb.v00 --- vmw_ahci.v00 --- bmcal.v00 --- clusters.v00 --- crx.v00 --- drivervm.v00 --- btldr.v00 --- dvfilter.v00 --- esx_ui.v00 --- esxupdt.v00 --- tpmesxup.v00 --- weaselin.v00 --- xorg.v00 --- esxio_co.v00 --- infravis.v00 --- loadesx.v00 --- hpv2_hps.v00 --- intelv2_.v00 --- lsiv2_dr.v00 --- nvme_pci.v01 --- oem_dell.v00 --- oem_leno.v00 --- smartpqi.v01 --- native_m.v00 --- nsx_pyth.v01 --- podvm_ro.v00 --- qlnative.v00 --- trx.v00 --- vcls_pod.v00 --- vdfs.v00 --- vds_vsip.v00 --- vmware_e.v00 --- vmware_f.v00 --- hbrsrv.v00 --- vsan.v00 --- vsanheal.v00 --- vsanmgmt.v00 --- tools.t00 --- qp_esx_d.v00 --- nsx_adf.v00 --- nsx_cfga.v00 --- nsx_cont.v00 --- nsx_cpp_.v00 --- nsx_esx_.v00 --- nsx_expo.v00 --- nsx_head.v00 --- nsx_host.v00 --- nsx_moni.v00 --- nsx_mpa.v00 --- nsx_nest.v00 --- nsx_neto.v00 --- nsx_opsa.v00 --- nsx_plat.v00 --- nsx_prot.v00 --- nsx_prox.v00 --- nsx_pyth.v00 --- nsx_pyth.v02 --- nsx_scx.v00 --- nsx_sfhc.v00 --- nsx_shar.v00 --- nsx_snpr.v00 --- nsxcli.v00 --- vsipfwli.v00 --- gc.v00 --- imgdb.tgz --- basemisc.tgz --- resvibs.tgz --- esxiodpt.tgz --- imgpayld.tgz
-build=9.1.1-0.25714478
-updated=0
-```
-
-📒 If you are performing the installation on two or three physical ESX hosts, the only required change is to update the reference to kickstart file, so you know which file is being referenceed on the USB device.
-
-5. Plug the USB device into your system and power on to begin the ESX installation.
-
-6. Once ESX reboots (there is a secondary reboot as part of the ESX scripted installation), you should be able to log in to your ESX host using the FQDN and see something like the following:
-
-![](screenshots/screenshot-3.png)
-
-7. Deploy the VCF Installer appliance (VCF-SDDC-Manager-Appliance-9.1.1.0.25713928.ova) using the following shell script, [deploy_vcf_installer.sh](scripts/deploy_vcf_installer.sh), which relies on [OVFTool](https://developer.broadcom.com/tools/open-virtualization-format-ovf-tool/latest). Install OVFTool if you do not already have it on your local system.
-
-![](screenshots/screenshot-4.png)
-
-8. After the VCF Installer is up and running, we need to make a few configuration changes (credentials/networking). I have automated these changes, and you can run the following PowerShell script: [setup_vcf_installer.ps1](scripts/setup_vcf_installer.ps1).
-
-![](screenshots/screenshot-5.png)
-
-9. Before we can deploy our VCF 9.1 environment, we need to connect to the VCF Offline Depot that you set up in Step 1.
-
-Open your browser to the VCF Installer (e.g. https://sddcm01.vcf.lab/), log in with the password you configured in Step 8, and then click the `DEPOT SETTINGS AND BINARY MANAGEMENT` button.
-
-![](screenshots/screenshot-6.png)
-
-If Step 8 successfully connected to your VCF Offline Depot, it should already have synced the VCF metadata, which shows the list of binaries available for download. Click the `DOWNLOAD` button to begin downloading the required VCF binaries and ensure each item listed in the table has a `Success` status.
-
-![](screenshots/screenshot-8.png)
-
-10. Navigate back to the VCF Installer homepage and click on `DEPLOY USING JSON SPEC` to begin your VCF deployment.
-
-![](screenshots/screenshot-9.png)
-
-Upload your modified [VCF deployment JSON](config/) and click `Next` to begin the validation.
-* One Host:
-  * [VCF 9.1.1 One Host Deployment w/TEP JSON Sample](config/one-node-vsan-esa-tep.json)
-  * [VCF 9.1.1 One Host Deployment w/TEP-less JSON Sample](config/one-node-vsan-esa-tepless.json)
-* Two Host:
-  * [VCF 9.1.1 Two Host Deployment w/TEP JSON Sample](config/two-node-vsan-esa-tep.json)
-  * [VCF 9.1.1 Two Host Deployment w/TEP-less JSON Sample](config/two-node-vsan-esa-tepless.json)
-* Three Host:
-  * [VCF 9.1.1 Three Host Deployment w/TEP JSON Sample](config/three-node-vsan-esa-tep.json)
-  * [VCF 9.1.1 Three Host Deployment w/TEP-less JSON Sample](config/three-node-vsan-esa-tepless.json)
-
-![](screenshots/screenshot-10.png)
-
-📒 You may encounter pre-checks that require acknowledgment to continue. I have noticed that with certain MikroTik devices, even when Jumbo Frames (MTU=9K) are configured, validation can fail while deployment still succeeds. In that case, simply acknowledge the configuration.
-
-Once you have fixed and/or acknowledged all applicable pre-checks, click `DEPLOY` to start the deployment.
-
-![](screenshots/screenshot-11.png)
-
-📒 During deployment, the VCF Installer generates its own self-signed TLS certificate, which forces a browser refresh and displays a message like the following. This is expected. Simply click the reload button as shown in the screenshot below.
-
-![](screenshots/screenshot-12.png)
-
-11. The deployment will take a few hours. Once everything has been deployed, you should see a success page like the following:
-
-![](screenshots/screenshot-14.png)
-
-You can log in to your new VCF 9.1 deployment by clicking the link to VCF Operations and using the `admin` credentials you specified in your deployment JSON, or simply copying the credentials from this screen.
-
-Here is an example of single host deployment and total deployment duration for each component:
-
-![](screenshots/screenshot-17.png)
+1. Build the per-host ISOs (default input: `~/Github/VMware-VMvisor-Installer-9.1.1.0100.25782009.x86_64.iso`):
+   ```bash
+   ./scripts/build_ks_isos.sh            # -> ./iso/ESX-NTNX-0{1,2,3}.iso
+   ```
+2. Mount `ESX-NTNX-0N.iso` on node N through its IPMI virtual media and boot from the virtual CD. The install is unattended and reboots twice. The host should come up at `https://uk-bhr-p-ntnx-N.jameskilby.cloud`, with vSAN disks showing as eligible (`vdq -q`) and the HPE disks flagged `IsCapacityFlash: 1`.
+3. Deploy the VCF Installer onto esx-a. It prompts for the vCenter password:
+   ```bash
+   ./scripts/deploy_vcf_installer.sh
+   ```
+4. Configure the installer (depot, override properties, service restart):
+   ```powershell
+   $env:VCENTER_PASSWORD = '...'; ./scripts/setup_vcf_installer.ps1
+   ```
+5. Open `https://uk-bhr-p-vcfi-1.jameskilby.cloud/` → *Depot settings and binary management* → download every binary until each one shows Success.
+6. *Deploy using JSON spec* → upload [config/three-node-vsan-osa-tep-ntnx1.json](config/three-node-vsan-osa-tep-ntnx1.json). All passwords are `VMware123!VMware123!` (ESX root `VMware123!`), so change them in the JSON, the kickstarts and the scripts before using this for anything that isn't a lab. Acknowledge the CPU/HCL warnings, then deploy. Expect it to take several hours on this hardware.
+7. Afterwards, power off and delete `uk-bhr-p-vcfi-1` and its DNS record. Optionally, add `esx-iscsi01` as supplemental storage: put the new host IQNs into TrueNAS initiator group 4 and rebuild vmk3/vmk4 (60.x/61.x) on the new VDS.
 
 ## Post Installation
 
 ![](screenshots/screenshot-15.png)
 
-12. There are a number of [post-VCF deployment optimizations](https://williamlam.com/2026/04/automating-lab-optimizations-for-post-deployment-of-vmware-cloud-foundation-vcf.html) that should be run for lab environments. You can refer to the linked blog post and run the PowerShell script `vcf-post-deploy-lab-tweaks.ps1`.
+There are a number of [post-VCF deployment optimizations](https://williamlam.com/2026/04/automating-lab-optimizations-for-post-deployment-of-vmware-cloud-foundation-vcf.html) that should be run for lab environments. You can refer to the linked blog post and run the PowerShell script `vcf-post-deploy-lab-tweaks.ps1`.
 
 ![](screenshots/screenshot-16.png)
-
-13. Additional optimization for those using AMD Zen4/5 CPUs.
-* Apply [additional NSX optimization](https://williamlam.com/2026/07/quick-tip-reducing-high-cpu-utilization-on-nsx-due-to-slow-entropy-from-amd-zen4-5-cpus.html) for reducing High CPU Utilization on NSX components (NSX Manager, Edges and Virtual Network Appliances) when using AMD Zen4/5 CPUs.
-* Apply [additional VCFA optimization](https://williamlam.com/2026/08/quick-tip-reducing-high-cpu-utilization-in-vcf-automation-vcfa-on-amd-zen4-zen5-cpus.html) for reducing High CPU Utilization on VCVF Automation (VCFA) when using AMD Zen4/5 CPUs.
 
 ## Additional Blog Resources
 
