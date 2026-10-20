@@ -69,13 +69,14 @@ What changed vs upstream:
 | Install disk | NVMe | 64 GB SATADOM, `--ignoreprereqwarnings` |
 | vSAN | ESA + HCL-bypass flags | ESA + the same HCL-bypass flags; kickstart wipes every local SSD so SDDC Manager can claim them |
 | NICs | vmnic1, one uplink | vmnic2 + vmnic3, both active |
-| VLANs | 30/40/50/60/70 | 100 mgmt, 101 vMotion, 102 vSAN, 103 host TEP, 106 DTGW external (already live on mikrotik-sw-1, gateways `.1`, SVI MTU 9212) |
+| VLANs | 30/40/50/60/70 | All of sw-1's VCF VLANs (live on the ntnx ports, gateways `.1`, SVI MTU 9212 on 101–104): 100 mgmt, 101 vMotion, 102 vSAN, 103 host TEP, 104 Edge TEP, 105 VM-Network, 106/107 Tier-0 uplinks |
+| North-south | Distributed Transit Gateway (VLAN 70) | **Centralized** connectivity: a 2-node NSX Edge cluster + Tier-0 (eBGP AS 65100 ↔ sw-1 AS 65000), created on Day 2 — the 9.1 installer can't deploy Edges at bring-up |
 | Mgmt MTU | vSwitch0 + vmk0 at 9000 | vSwitch0 9000 (for the jumbo vmkping validation), vmk0 1500 (the VLAN 100 SVI is 1500) |
 | AMD / NVMe-tiering tweaks | yes | removed (Intel, no NVMe); LRO/TSO-off kept for i40en |
 | VCF Installer | on esx01, reused as SDDC Manager | on **uk-bhr-p-esx-a** (Z840-NVMe1) via vCenter, OVA streamed from the VIS depot; deploys a **new** SDDC Manager (`useExistingDeployment: false`) |
 | Depot | python http :8888 | VIS appliance `http://uk-bhr-p-vis-1.jameskilby.cloud:8081` |
 | Installer overrides | single-host + ESA disk claim | ESA disk claim (no single-host flag) + longer NSX/VSP timeouts + retries; also fixes an upstream bug where OperationsManager overrides were written to the DomainManager file |
-| Deployment JSON | 6 samples | [config/three-node-vsan-esa-tep-ntnx1.json](config/three-node-vsan-esa-tep-ntnx1.json) only |
+| Deployment JSON | 6 samples | [config/three-node-vsan-esa-tep-ntnx1.json](config/three-node-vsan-esa-tep-ntnx1.json) (bring-up) + [config/edge-cluster-ntnx1.json](config/edge-cluster-ntnx1.json) (Day 2, via [scripts/day2_ntnx1_networking.ps1](scripts/day2_ntnx1_networking.ps1)) |
 
 ### ⚠️ Read before starting
 
@@ -106,12 +107,23 @@ What changed vs upstream:
 | — | 192.168.100.33–46 | MSR node pool |
 | uk-bhr-p-nsx-1 | 192.168.100.48 | NSX VIP |
 | uk-bhr-p-nsx-1a | 192.168.100.49 | NSX Manager |
+| uk-bhr-p-edge-1a / -1b | 192.168.100.50 / .51 | NSX Edge nodes (Day 2) |
 | uk-bhr-p-vcf-proxy-1 | 192.168.100.55 | Ops cloud proxy |
 | uk-bhr-p-vcf-asr-1 | 192.168.100.56 | Automation Services Runtime |
 | uk-bhr-p-vcfa-1 | 192.168.100.57 | VCF Automation |
 | — | 192.168.100.65–70 | Automation node pool |
 
-Host vmkernel pools: vMotion `192.168.101.11-20`, vSAN `192.168.102.11-20`, TEP `192.168.103.11-30`. DTGW: VLAN 106, gateway `192.168.106.1/24`, external block `192.168.106.128/26`.
+Other networks:
+
+| VLAN | Use | Addresses |
+|---|---|---|
+| 101 | vMotion vmk | 192.168.101.11–20 |
+| 102 | vSAN vmk | 192.168.102.11–20 |
+| 103 | Host TEP (NSX IP pool) | 192.168.103.11–30 |
+| 104 | Edge TEP | edge-1a .11/.12, edge-1b .13/.14 |
+| 105 | VM-Network port group `ntnx1-vm-network` | DHCP from sw-1 (.100–.200) |
+| 106 | Tier-0 uplink 1 | edge-1a .2, edge-1b .3 → peer sw-1 .1 |
+| 107 | Tier-0 uplink 2 | edge-1a .2, edge-1b .3 → peer sw-1 .1 |
 
 4. **Pre-flight from something on VLAN 100** (e.g. the installer VM once it's up):
    * DNS really reaches AD: `dig @1.2.3.4 uk-bhr-p-vc-2.jameskilby.cloud` must *fail*. If it answers, port 53 is being hijacked the same way it is on VLAN 4.
@@ -136,7 +148,27 @@ Host vmkernel pools: vMotion `192.168.101.11-20`, vSAN `192.168.102.11-20`, TEP 
    ```
 5. Open `https://uk-bhr-p-vcfi-1.jameskilby.cloud/` → *Depot settings and binary management* → download every binary until each one shows Success.
 6. *Deploy using JSON spec* → upload [config/three-node-vsan-esa-tep-ntnx1.json](config/three-node-vsan-esa-tep-ntnx1.json). All passwords are `VMware123!VMware123!` (ESX root `VMware123!`), so change them in the JSON, the kickstarts and the scripts before using this for anything that isn't a lab. Acknowledge the CPU/HCL warnings, then deploy. Expect it to take several hours on this hardware.
-7. Afterwards, power off and delete `uk-bhr-p-vcfi-1` and its DNS record. Optionally, add `esx-iscsi01` as supplemental storage: put the new host IQNs into TrueNAS initiator group 4 and rebuild vmk3/vmk4 (60.x/61.x) on the new VDS.
+7. **Day 2: Edges + VM-Network.** First add sw-1's side of the BGP sessions. `provision-vcf.yml` only models the single UniFi peer, so do this through your Ansible/Semaphore flow (new vars or a task). Here is the RouterOS equivalent for reference:
+   ```
+   /routing filter rule
+   add chain=nsx-edge-in rule="if (dst in 192.168.110.0/24) { accept }" comment="NTNX1 VPC external block"
+   add chain=nsx-edge-in rule="reject"
+   add chain=bgp-vcf-out rule="if (dst == 192.168.110.0/24) { accept }" place-before=[find chain=bgp-vcf-out rule="reject"]
+   /routing bgp connection
+   add name=ntnx1-edge-1a-106 local.address=192.168.106.1 local.role=ebgp remote.address=192.168.106.2 remote.as=65100 as=65000 input.filter=nsx-edge-in output.default-originate=always output.filter-chain=nsx-edge-out
+   add name=ntnx1-edge-1b-106 local.address=192.168.106.1 local.role=ebgp remote.address=192.168.106.3 remote.as=65100 as=65000 input.filter=nsx-edge-in output.default-originate=always output.filter-chain=nsx-edge-out
+   add name=ntnx1-edge-1a-107 local.address=192.168.107.1 local.role=ebgp remote.address=192.168.107.2 remote.as=65100 as=65000 input.filter=nsx-edge-in output.default-originate=always output.filter-chain=nsx-edge-out
+   add name=ntnx1-edge-1b-107 local.address=192.168.107.1 local.role=ebgp remote.address=192.168.107.3 remote.as=65100 as=65000 input.filter=nsx-edge-in output.default-originate=always output.filter-chain=nsx-edge-out
+   /routing filter rule
+   add chain=nsx-edge-out rule="if (dst == 0.0.0.0/0) { accept }"
+   add chain=nsx-edge-out rule="reject"
+   ```
+   The edges then receive only a default route, and sw-1 accepts only the VPC external block (192.168.110.0/24 here, so pick yours and use it as the VPC external IP block in vCenter). That block is passed on to the UniFi over the existing iBGP session. Then run:
+   ```powershell
+   ./scripts/day2_ntnx1_networking.ps1
+   ```
+   The script validates and creates the Edge cluster through the SDDC Manager API, filling in the cluster ID itself, and adds the VLAN 105 `ntnx1-vm-network` port group. Afterwards, finish the Centralized Transit Gateway / VPC external connection in vCenter against Tier-0 `ntnx1-m01-t0`.
+8. Afterwards, power off and delete `uk-bhr-p-vcfi-1` and its DNS record. Optionally, add `esx-iscsi01` as supplemental storage: put the new host IQNs into TrueNAS initiator group 4 and rebuild vmk3/vmk4 (60.x/61.x) on the new VDS.
 
 ## Post Installation
 

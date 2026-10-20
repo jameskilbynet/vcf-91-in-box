@@ -166,14 +166,6 @@
         "nsxtAdminPassword": "VMware123!VMware123!",
         "nsxtAuditPassword": "VMware123!VMware123!",
         "useExistingDeployment": false,
-        "vpcSpec": {
-            "dtgwSpec": {
-                "vlan": "106",
-                "gatewayCidr": "192.168.106.1/24",
-                "externalIpBlockCidr": "192.168.106.128/26",
-                "privateTgwIpBlockCidr": "172.31.0.0/16"
-            }
-        },
         "nsxtManagers": [
             {
                 "hostname": "uk-bhr-p-nsx-1a.jameskilby.cloud"

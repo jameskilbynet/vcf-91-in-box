@@ -1,0 +1,95 @@
+{
+    "edgeClusterName": "ntnx1-m01-ec01",
+    "edgeClusterType": "NSX-T",
+    "edgeRootPassword": "VMware123!VMware123!",
+    "edgeAdminPassword": "VMware123!VMware123!",
+    "edgeAuditPassword": "VMware123!VMware123!",
+    "edgeFormFactor": "MEDIUM",
+    "tier0ServicesHighAvailability": "ACTIVE_ACTIVE",
+    "mtu": 9000,
+    "asn": 65100,
+    "tier0RoutingType": "EBGP",
+    "tier0Name": "ntnx1-m01-t0",
+    "tier1Name": "ntnx1-m01-t1",
+    "tier1Unhosted": false,
+    "edgeClusterProfileType": "DEFAULT",
+    "edgeClusterProfileSpec": {
+        "edgeClusterProfileName": "ntnx1-m01-ec01-profile",
+        "bfdAllowedHop": 255,
+        "bfdDeclareDeadMultiple": 3,
+        "bfdProbeInterval": 1000,
+        "standbyRelocationThreshold": 30
+    },
+    "edgeNodeSpecs": [
+        {
+            "edgeNodeName": "uk-bhr-p-edge-1a.jameskilby.cloud",
+            "managementIP": "192.168.100.50/24",
+            "managementGateway": "192.168.100.1",
+            "edgeTepGateway": "192.168.104.1",
+            "edgeTep1IP": "192.168.104.11/24",
+            "edgeTep2IP": "192.168.104.12/24",
+            "edgeTepVlan": 104,
+            "clusterId": "__FILLED_BY_SCRIPT__",
+            "interRackCluster": false,
+            "firstNsxVdsUplink": "uplink1",
+            "secondNsxVdsUplink": "uplink2",
+            "uplinkNetwork": [
+                {
+                    "uplinkVlan": 106,
+                    "uplinkInterfaceIP": "192.168.106.2/24",
+                    "bgpPeers": [
+                        {
+                            "ip": "192.168.106.1",
+                            "asn": 65000
+                        }
+                    ]
+                },
+                {
+                    "uplinkVlan": 107,
+                    "uplinkInterfaceIP": "192.168.107.2/24",
+                    "bgpPeers": [
+                        {
+                            "ip": "192.168.107.1",
+                            "asn": 65000
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "edgeNodeName": "uk-bhr-p-edge-1b.jameskilby.cloud",
+            "managementIP": "192.168.100.51/24",
+            "managementGateway": "192.168.100.1",
+            "edgeTepGateway": "192.168.104.1",
+            "edgeTep1IP": "192.168.104.13/24",
+            "edgeTep2IP": "192.168.104.14/24",
+            "edgeTepVlan": 104,
+            "clusterId": "__FILLED_BY_SCRIPT__",
+            "interRackCluster": false,
+            "firstNsxVdsUplink": "uplink1",
+            "secondNsxVdsUplink": "uplink2",
+            "uplinkNetwork": [
+                {
+                    "uplinkVlan": 106,
+                    "uplinkInterfaceIP": "192.168.106.3/24",
+                    "bgpPeers": [
+                        {
+                            "ip": "192.168.106.1",
+                            "asn": 65000
+                        }
+                    ]
+                },
+                {
+                    "uplinkVlan": 107,
+                    "uplinkInterfaceIP": "192.168.107.3/24",
+                    "bgpPeers": [
+                        {
+                            "ip": "192.168.107.1",
+                            "asn": 65000
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
