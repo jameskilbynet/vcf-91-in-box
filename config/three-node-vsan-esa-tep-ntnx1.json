@@ -232,7 +232,7 @@
             "vsanDedup": false,
             "failuresToTolerate": 1,
             "esaConfig": {
-                "enabled": false
+                "enabled": true
             },
             "datastoreName": "ntnx1-vsan01",
             "encryptionConfig": {

@@ -13,12 +13,15 @@ $SSHKeys = ""
 # See https://williamlam.com/2026/05/vcf-9-1-comprehensive-vcf-installer-sddc-manager-configuration-workarounds-for-lab-deployments.html for list of configuration overrides
 
 # Configuration overrides to be added to /home/vcf/feature.properties
-# (single-host and vSAN ESA disk-claim flags removed: 3 hosts, vSAN OSA)
-$VCFFeatureProperties = @{}
+# vSAN ESA HCL bypass: the SATA SSDs / LSI SAS3008 are not on the ESA HCL
+$VCFFeatureProperties = @{
+    "feature.vcf.vgl-43370.vsan.esa.sddc.managed.disk.claim" = "true"
+}
 
 # Configuration overrides to be added to /etc/vmware/vcf/domainmanager/application.properties
 # Longer timeouts/retries for the Haswell-era CPUs and SATA vSAN
 $VCFDomainManagerProperties = @{
+    "vsan.esa.sddc.managed.disk.claim" = "true"
     "orchestrator.task.retry.max" = "5"
     "nsxt.manager.wait.minutes" = "180"
     "vsp.bootstrap.task.timeout.minutes" = "240"
@@ -26,7 +29,9 @@ $VCFDomainManagerProperties = @{
 }
 
 # Configuration overrides to be added to /etc/vmware/vcf/operationsmanager/application-prod.properties
-$VCFOperationsManagerProperties = @{}
+$VCFOperationsManagerProperties = @{
+    "vsan.esa.sddc.managed.disk.claim" = "true"
+}
 
 # VIS offline depot (uk-bhr-p-vis-1, on esx-a)
 $VCFInstallerOfflineDepot = "http://uk-bhr-p-vis-1.jameskilby.cloud:8081"

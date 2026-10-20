@@ -67,22 +67,22 @@ What changed vs upstream:
 |---|---|---|
 | Boot / install | USB stick, `ks=usb:` | Per-host ISO over IPMI virtual media, `ks=cdrom:` + `allowLegacyCPU=true` ([scripts/build_ks_isos.sh](scripts/build_ks_isos.sh)) |
 | Install disk | NVMe | 64 GB SATADOM, `--ignoreprereqwarnings` |
-| vSAN | ESA + HCL-bypass flags | **OSA**: Samsung MZ7KM960 = cache, HPE VK0960 = capacity (tagged `capacityFlash` in kickstart); ESA flags removed |
+| vSAN | ESA + HCL-bypass flags | ESA + the same HCL-bypass flags; kickstart wipes every local SSD so SDDC Manager can claim them |
 | NICs | vmnic1, one uplink | vmnic2 + vmnic3, both active |
 | VLANs | 30/40/50/60/70 | 100 mgmt, 101 vMotion, 102 vSAN, 103 host TEP, 106 DTGW external (already live on mikrotik-sw-1, gateways `.1`, SVI MTU 9212) |
 | Mgmt MTU | vSwitch0 + vmk0 at 9000 | vSwitch0 9000 (for the jumbo vmkping validation), vmk0 1500 (the VLAN 100 SVI is 1500) |
 | AMD / NVMe-tiering tweaks | yes | removed (Intel, no NVMe); LRO/TSO-off kept for i40en |
 | VCF Installer | on esx01, reused as SDDC Manager | on **uk-bhr-p-esx-a** (Z840-NVMe1) via vCenter, OVA streamed from the VIS depot; deploys a **new** SDDC Manager (`useExistingDeployment: false`) |
 | Depot | python http :8888 | VIS appliance `http://uk-bhr-p-vis-1.jameskilby.cloud:8081` |
-| Installer overrides | single-host + ESA disk claim | longer NSX/VSP timeouts + retries; also fixes an upstream bug where OperationsManager overrides were written to the DomainManager file |
-| Deployment JSON | 6 samples | [config/three-node-vsan-osa-tep-ntnx1.json](config/three-node-vsan-osa-tep-ntnx1.json) only |
+| Installer overrides | single-host + ESA disk claim | ESA disk claim (no single-host flag) + longer NSX/VSP timeouts + retries; also fixes an upstream bug where OperationsManager overrides were written to the DomainManager file |
+| Deployment JSON | 6 samples | [config/three-node-vsan-esa-tep-ntnx1.json](config/three-node-vsan-esa-tep-ntnx1.json) only |
 
 ### ⚠️ Read before starting
 
 * **This is destructive.** It reinstalls ESX on the three SATADOMs and wipes the SSDs. On ntnx-1 that includes `NTNX1-Local` and `NTNX1-Local-Samsung` (≈6 GB used, so check what's on them first). It also ends Holodeck on NTNX1. The VIS depot and HoloRouter are now on esx-a, so they aren't touched.
 * **The CPU is unsupported.** Broadcom discontinued Broadwell-EP in VCF 9.x, and Haswell-EP is older still. `allowLegacyCPU=true` turns the installer's hard stop into a warning; Haswell has the XSAVE instruction ESX requires. Expect future vLCM upgrades to need the same workaround, or to refuse.
-* **The vSAN hardware is off the HCL.** SATA SSDs on an LSI SAS3008 aren't on it, which is why this uses OSA rather than ESA (ESA also misbehaved on these nodes). Acknowledge any HCL warnings during validation.
-* **ntnx-3 only shows 2 SSDs** (it had 3 in September). Raw capacity is 2+2+1 = 5 × 960 GB of capacity tier, about 2.2 TB usable at FTT=1, unevenly spread. Re-seat or replace the missing drive and add it to `KS-ESX03.CFG` first, if you can.
+* **The vSAN hardware is off the ESA HCL** (SATA SSDs on an LSI SAS3008). The `vsan.esa.sddc.managed.disk.claim` overrides bypass the HCL check, as upstream does for its consumer NVMe. ESA has run on these nodes before. The October 2026 partition was `VSAN.IgnoreClusterMemberListUpdates=1` on ntnx-2/3, and a fresh install resets that, but check it is `0` on every host after install (`esxcli system settings advanced list -o /VSAN/IgnoreClusterMemberListUpdates`).
+* **ntnx-3 only shows 2 SSDs** (it had 3 in September). ESA uses every disk, so raw capacity is 3+3+2 = 8 × 960 GB ≈ 7.7 TB (about 5 TB usable with ESA's RAID-5 2+1 on 3 hosts), unevenly spread. Re-seat or replace the missing drive and add it to `KS-ESX03.CFG` first, if you can.
 * The VIS depot returned a `404` for `VCF_SALT_RAAS` 9.1.1.0100 during the Holodeck run. Watch for it at the binary-download step.
 
 ### Prerequisites
@@ -125,7 +125,7 @@ Host vmkernel pools: vMotion `192.168.101.11-20`, vSAN `192.168.102.11-20`, TEP 
    ```bash
    ./scripts/build_ks_isos.sh            # -> ./iso/ESX-NTNX-0{1,2,3}.iso
    ```
-2. Mount `ESX-NTNX-0N.iso` on node N through its IPMI virtual media and boot from the virtual CD. The install is unattended and reboots twice. The host should come up at `https://uk-bhr-p-ntnx-N.jameskilby.cloud`, with vSAN disks showing as eligible (`vdq -q`) and the HPE disks flagged `IsCapacityFlash: 1`.
+2. Mount `ESX-NTNX-0N.iso` on node N through its IPMI virtual media and boot from the virtual CD. The install is unattended and reboots twice. The host should come up at `https://uk-bhr-p-ntnx-N.jameskilby.cloud`, with all local SSDs showing as eligible (`vdq -q`).
 3. Deploy the VCF Installer onto esx-a. It prompts for the vCenter password:
    ```bash
    ./scripts/deploy_vcf_installer.sh
@@ -135,7 +135,7 @@ Host vmkernel pools: vMotion `192.168.101.11-20`, vSAN `192.168.102.11-20`, TEP 
    $env:VCENTER_PASSWORD = '...'; ./scripts/setup_vcf_installer.ps1
    ```
 5. Open `https://uk-bhr-p-vcfi-1.jameskilby.cloud/` → *Depot settings and binary management* → download every binary until each one shows Success.
-6. *Deploy using JSON spec* → upload [config/three-node-vsan-osa-tep-ntnx1.json](config/three-node-vsan-osa-tep-ntnx1.json). All passwords are `VMware123!VMware123!` (ESX root `VMware123!`), so change them in the JSON, the kickstarts and the scripts before using this for anything that isn't a lab. Acknowledge the CPU/HCL warnings, then deploy. Expect it to take several hours on this hardware.
+6. *Deploy using JSON spec* → upload [config/three-node-vsan-esa-tep-ntnx1.json](config/three-node-vsan-esa-tep-ntnx1.json). All passwords are `VMware123!VMware123!` (ESX root `VMware123!`), so change them in the JSON, the kickstarts and the scripts before using this for anything that isn't a lab. Acknowledge the CPU/HCL warnings, then deploy. Expect it to take several hours on this hardware.
 7. Afterwards, power off and delete `uk-bhr-p-vcfi-1` and its DNS record. Optionally, add `esx-iscsi01` as supplemental storage: put the new host IQNs into TrueNAS initiator group 4 and rebuild vmk3/vmk4 (60.x/61.x) on the new VDS.
 
 ## Post Installation
