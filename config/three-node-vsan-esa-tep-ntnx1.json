@@ -224,7 +224,8 @@
             "vsanDedup": false,
             "failuresToTolerate": 1,
             "esaConfig": {
-                "enabled": true
+                "enabled": true,
+                "skipHclAutoDiskClaim": true
             },
             "datastoreName": "ntnx1-vsan01",
             "encryptionConfig": {
