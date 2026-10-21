@@ -171,6 +171,17 @@ Other networks:
    The script validates and creates the Edge cluster through the SDDC Manager API, filling in the cluster ID itself, and adds the VLAN 105 `ntnx1-vm-network` port group. Afterwards, finish the Centralized Transit Gateway / VPC external connection in vCenter against Tier-0 `ntnx1-m01-t0`.
 8. Afterwards, power off and delete `uk-bhr-p-vcfi-1` and its DNS record. Optionally, add `esx-iscsi01` as supplemental storage: put the new host IQNs into TrueNAS initiator group 4 and rebuild vmk3/vmk4 (60.x/61.x) on the new VDS.
 
+### Shutting down and starting up NTNX1
+
+[scripts/shutdown_ntnx1_vcf.sh](scripts/shutdown_ntnx1_vcf.sh) guest-shuts-down the VCF VMs through `uk-bhr-p-vc-2`, one layer at a time and top-down. The order is VCF Automation → cloud proxy → VCF Operations → management services runtime → License Server → NSX Edges → NSX Manager → SDDC Manager, and it waits for each layer to power off before starting the next. Before starting, it checks that every host is connected and that vSAN isn't resyncing. Run it with `--dry-run` first. It stops at vCenter: finish with **vSAN → Shutdown Cluster** on `ntnx1-mgmt-cl01`, which shuts down vCenter last and powers off the hosts.
+
+To start up again:
+1. Power on the hosts.
+2. Wait for vCenter, then run **vSAN → Restart Cluster**.
+3. Power the VMs on in the reverse order.
+
+ntnx-3's power-on is a cold boot, so its SAS3008 comes back normally; still check that all 8 SSDs are present.
+
 ## Post Installation
 
 ![](screenshots/screenshot-15.png)
