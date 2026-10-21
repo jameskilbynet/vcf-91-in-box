@@ -130,7 +130,7 @@ Other networks:
    * DNS really reaches AD: `dig @1.2.3.4 uk-bhr-p-vc-2.jameskilby.cloud` must *fail*. If it answers, port 53 is being hijacked the same way it is on VLAN 4.
    * NTP: `ntpdate -q 192.168.100.1` (mikrotik-sw-1 is the lab NTP server).
    * Depot: `curl -sI http://uk-bhr-p-vis-1.jameskilby.cloud:8081/PROD/metadata/productVersionCatalog/v1/productVersionCatalog.json` returns 200.
-5. Tools on the Mac: `brew install xorriso`, plus [OVFTool](https://developer.broadcom.com/tools/open-virtualization-format-ovf-tool/latest) and PowerCLI.
+5. Tools on the Mac: `brew install xorriso govc`, plus PowerCLI.
 
 ### Installation
 
