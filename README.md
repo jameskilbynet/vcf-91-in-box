@@ -91,7 +91,7 @@ What changed vs upstream:
 
 1. **Remove the three hosts from `uk-bhr-p-vc-1`.** They're in maintenance mode and not responding, so use *Remove from Inventory*.
 2. **Create a VLAN 100 port group on DSwitch** for the installer VM on esx-a. Upstream calls it `DSwitch-VCF-Mgmt`: VLAN 100, default security. esx-a's switch ports already carry VLAN 100 (the `hosts` group on mikrotik-sw-1).
-3. **Create the DNS records** in AD (`jameskilby.cloud`, forward **and** reverse). Create the reverse zone `100.168.192.in-addr.arpa` if it's missing. The ntnx A/PTR records currently point at 192.168.38.24–26 and must be **replaced**. Check that none of the new names already exist.
+3. **Create the DNS records** in AD (`jameskilby.cloud`, forward **and** reverse). Create the reverse zone `100.168.192.in-addr.arpa` if it's missing. The ntnx A/PTR records currently point at 192.168.38.24–26 and must be **replaced**. Check that none of the new names already exist. [scripts/create_dns_records.ps1](scripts/create_dns_records.ps1) does all of this on the Windows DNS server: run it with `-WhatIf` first. It stops without changing anything if a name or IP is already in use by something else.
 
 | Hostname (`.jameskilby.cloud`) | IP | Function |
 |---|---|---|
