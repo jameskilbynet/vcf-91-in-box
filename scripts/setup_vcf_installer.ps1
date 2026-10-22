@@ -1,7 +1,7 @@
 # The installer VM runs on esx-a, so guest operations go through vCenter
 $VIServer = "uk-bhr-p-vc-1.jameskilby.cloud"
 $VIUsername = "administrator@vsphere.cloud"
-$VIPassword = if ($env:VCENTER_PASSWORD) { $env:VCENTER_PASSWORD } else { (Get-Credential -UserName $VIUsername -Message "vCenter").GetNetworkCredential().Password }
+$VIPassword = if ($env:VCENTER) { $env:VCENTER_PASSWORD } else { (Get-Credential -UserName $VIUsername -Message "vCenter").GetNetworkCredential().Password }
 
 $VCFInstallerVMName = "uk-bhr-p-vcfi-1"
 $VCFInstallerFQDN = "uk-bhr-p-vcfi-1.jameskilby.cloud"
