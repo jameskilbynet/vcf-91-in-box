@@ -59,7 +59,7 @@ powered_on_vms() {
 
 # Pre-checks: vSAN must not be resyncing, and every host must be connected
 log "Pre-checks"
-resync_bytes=0
+
 for host in $(govc find "${CLUSTER}" -type h); do
     state=$(govc object.collect -s "${host}" runtime.connectionState)
     if [[ "${state}" != "connected" ]]; then
@@ -69,12 +69,22 @@ for host in $(govc find "${CLUSTER}" -type h); do
 done
 first_host=$(govc find "${CLUSTER}" -type h | head -1)
 resync_bytes=$(govc host.esxcli -host "${first_host}" vsan debug resync summary get 2>/dev/null \
-    | awk -F: '/Total Bytes Left To Resync/ {gsub(/ /, "", $2); print $2}')
-if [[ -n "${resync_bytes}" && "${resync_bytes}" != "0" ]]; then
+    | awk -F: '/TotalBytesLeftToResync/ {gsub(/ /, "", $2); print $2}')
+inaccessible=$(govc host.esxcli -host "${first_host}" vsan debug object health summary get 2>/dev/null \
+    | awk '$1 == "inaccessible" {print $2}')
+if [[ -z "${resync_bytes}" || -z "${inaccessible}" ]]; then
+    log "  couldn't read the vSAN resync/object health from ${first_host##*/} - check Monitor > vSAN by hand"
+    exit 1
+fi
+if [[ "${resync_bytes}" != "0" ]]; then
     log "  vSAN is still resyncing (${resync_bytes} bytes left) - wait for it to finish"
     exit 1
 fi
-log "  hosts connected, vSAN resync: ${resync_bytes:-unknown (check Monitor > vSAN > Resyncing Objects)}"
+if [[ "${inaccessible}" != "0" ]]; then
+    log "  ${inaccessible} vSAN objects are inaccessible - fix that before shutting down"
+    exit 1
+fi
+log "  hosts connected, vSAN resync 0 bytes, 0 inaccessible objects"
 
 # Plan
 log "Shutdown plan:"

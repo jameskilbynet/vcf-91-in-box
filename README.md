@@ -178,7 +178,7 @@ Other networks:
 To start up again:
 1. Power on the hosts.
 2. Wait for vCenter, then run **vSAN → Restart Cluster**.
-3. Power the VMs on in the reverse order.
+3. Run [scripts/startup_ntnx1_vcf.sh](scripts/startup_ntnx1_vcf.sh) (`--dry-run` first). It checks that every host is connected and out of maintenance mode, that all 8 vSAN disks are present and that no vSAN objects are inaccessible. Then it powers the appliances on bottom-up: SDDC Manager → NSX → Edges → License Server → management services runtime → VCF Operations → cloud proxy → VCF Automation. It waits for each one to answer: the SDDC Manager API token, NSX cluster `STABLE`, or the service's HTTPS endpoint.
 
 ntnx-3's power-on is a cold boot, so its SAS3008 comes back normally; still check that all 8 SSDs are present.
 
