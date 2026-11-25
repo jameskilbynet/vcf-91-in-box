@@ -3,11 +3,14 @@
 # Guest-shuts-down the VCF VMs top-down through uk-bhr-p-vc-2, waiting for each
 # layer to power off before starting the next. It stops before vCenter/vSAN:
 # finish with the vSAN "Shutdown Cluster" wizard (printed at the end), which
-# powers off vCenter and the three hosts safely.
+# powers off vCenter and the three hosts safely. With --vsan the script runs
+# that step itself through the vSAN API (vsan_cluster_power.py) and waits for
+# the hosts to go down.
 #
 #   ./shutdown_ntnx1_vcf.sh --dry-run    # show what would be shut down, change nothing
 #   ./shutdown_ntnx1_vcf.sh              # asks for confirmation first
 #   ./shutdown_ntnx1_vcf.sh --yes        # no prompt
+#   ./shutdown_ntnx1_vcf.sh --yes --vsan # ...and then vSAN Shutdown Cluster
 #
 # Startup is the reverse; see the README.
 
@@ -34,21 +37,25 @@ LAYERS=(
 )
 
 GUEST_SHUTDOWN_TIMEOUT=900   # seconds per layer before giving up
+HOSTS_DOWN_TIMEOUT=1800      # --vsan: seconds to wait for the hosts to power off
 FORCE_AFTER_TIMEOUT=false    # true = hard power off VMs that ignore the guest shutdown
 
 ### DO NOT EDIT BEYOND HERE ###
 
 DRY_RUN=false
 ASSUME_YES=false
+VSAN=false
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=true ;;
         --yes) ASSUME_YES=true ;;
+        --vsan) VSAN=true ;;
         *) echo "Unknown option: $arg"; exit 1 ;;
     esac
 done
 
 log() { echo -e "[$(date +%H:%M:%S)] $*"; }
+VSAN_POWER="$(cd "$(dirname "$0")" && pwd)/vsan_cluster_power.py"
 
 command -v govc >/dev/null || { echo "govc not found (brew install govc)"; exit 1; }
 govc about >/dev/null 2>&1 || { echo "Can't log in to ${GOVC_URL} as ${GOVC_USERNAME}"; exit 1; }
@@ -93,7 +100,14 @@ for layer in "${LAYERS[@]}"; do
     vms=$(powered_on_vms "${pattern}" | xargs -n1 basename 2>/dev/null | xargs)
     printf "  %-34s %s\n" "${name}" "${vms:-(none powered on - skipped)}"
 done
-printf "  %-34s %s\n" "vCenter + vSAN + hosts" "vSAN Shutdown Cluster wizard (manual, see below)"
+if ${VSAN}; then
+    cluster_id=$(govc find -i -maxdepth 0 "${CLUSTER}")
+    vsan_status=$(python3 -I "${VSAN_POWER}" status "${cluster_id}") \
+        || { log "  can't read the vSAN cluster power state: ${vsan_status}"; exit 1; }
+    printf "  %-34s %s\n" "vCenter + vSAN + hosts" "vSAN Shutdown Cluster via the API (now ${vsan_status})"
+else
+    printf "  %-34s %s\n" "vCenter + vSAN + hosts" "vSAN Shutdown Cluster wizard (manual, see below)"
+fi
 
 if ${DRY_RUN}; then
     log "Dry run - nothing changed"
@@ -147,6 +161,35 @@ for layer in "${LAYERS[@]}"; do
 done
 
 log "All VCF VMs are off. Only ${VCENTER_VM} is still running."
+
+if ${VSAN}; then
+    # Host names now, while vCenter is still up, to watch them power off.
+    hosts=$(govc find "${CLUSTER}" -type h | xargs -n1 basename)
+    log "vSAN Shutdown Cluster on ${CLUSTER##*/}"
+    out=$(python3 -I "${VSAN_POWER}" shutdown "${cluster_id}")
+    log "  ${out}"
+    [[ "${out}" == OK* ]] || exit 1
+    # vSAN powers off vCenter, then the hosts. Done once none answers HTTPS.
+    waited=0
+    while true; do
+        up=""
+        for h in ${hosts}; do
+            [[ "$(curl -sk -o /dev/null --max-time 5 -w '%{http_code}' "https://${h}/")" != "000" ]] && up="${up} ${h}"
+        done
+        [[ -z "${up}" ]] && break
+        if (( waited >= HOSTS_DOWN_TIMEOUT )); then
+            log "  hosts still up after ${HOSTS_DOWN_TIMEOUT}s:${up} - check the ESXi consoles / IPMI"
+            exit 1
+        fi
+        sleep 30
+        waited=$((waited + 30))
+    done
+    log "vCenter and all hosts are down (${waited}s). The lab is off."
+    echo
+    echo "To start up again: power the hosts on (IPMI), then ./startup_ntnx1_vcf.sh --yes --vsan"
+    echo "(it waits for vCenter, runs vSAN Restart Cluster, then starts the VMs)."
+    exit 0
+fi
 cat <<EOF
 
 Final step (manual): in https://${GOVC_URL}/ui

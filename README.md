@@ -178,7 +178,15 @@ Other networks:
 To start up again:
 1. Power on the hosts.
 2. Wait for vCenter, then run **vSAN → Restart Cluster**.
-3. Run [scripts/startup_ntnx1_vcf.sh](scripts/startup_ntnx1_vcf.sh) (`--dry-run` first). It checks that every host is connected and out of maintenance mode, that all 8 vSAN disks are present and that no vSAN objects are inaccessible. Then it powers the appliances on bottom-up: SDDC Manager → NSX → Edges → License Server → management services runtime → VCF Operations → cloud proxy → VCF Automation. It waits for each one to answer: the SDDC Manager API token, NSX cluster `STABLE`, or the service's HTTPS endpoint.
+3. Run [scripts/startup_ntnx1_vcf.sh](scripts/startup_ntnx1_vcf.sh) (`--dry-run` first). It checks that every host is connected and out of maintenance mode, that all 8 vSAN disks are present and that no vSAN objects are inaccessible. Then it powers the appliances on bottom-up: SDDC Manager → NSX → Edges → License Server → management services runtime → VCF Operations → cloud proxy → VCF Automation. It waits for each one to answer: the SDDC Manager API token, NSX cluster `STABLE`, or the service's HTTPS endpoint answering with a status below 500.
+
+#### Automating the vSAN steps (`--vsan`)
+
+Add `--vsan` to either script to have it do the vSAN step too, through the vSAN management API ([scripts/vsan_cluster_power.py](scripts/vsan_cluster_power.py), Python standard library only):
+* `shutdown_ntnx1_vcf.sh --yes --vsan` runs **Shutdown Cluster** once the VMs are off, then waits until vCenter and all three hosts have powered off.
+* `startup_ntnx1_vcf.sh --yes --vsan` can be run as soon as the hosts are powered on. It waits up to an hour for vCenter and every host to connect, runs **Restart Cluster** if the cluster isn't fully powered on, and then carries on with the pre-checks and the appliances. With `--dry-run --vsan` it reports whether a restart is needed and stops there, since the other pre-checks only pass after it.
+
+`vsan_cluster_power.py status <cluster-moref>` prints the cluster's vSAN power state (`clusterPoweredOn` when fully up). Home Assistant runs these scripts from the Homelab dashboard with `--vsan`.
 
 ntnx-3's power-on is a cold boot, so its SAS3008 comes back normally; still check that all 8 SSDs are present.
 
