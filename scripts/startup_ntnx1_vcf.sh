@@ -4,9 +4,15 @@
 # Powers the VMs on bottom-up (reverse of shutdown_ntnx1_vcf.sh), waiting for
 # each component to answer before starting the next.
 #
+# With --vsan it does the vCenter/vSAN part too: run it as soon as the hosts are
+# powered on and it waits for vCenter and the hosts to connect, runs vSAN
+# Restart Cluster through the vSAN API (vsan_cluster_power.py) if the cluster
+# isn't fully powered on, then carries on as below.
+#
 #   ./startup_ntnx1_vcf.sh --dry-run    # pre-checks + plan, changes nothing
 #   ./startup_ntnx1_vcf.sh              # asks for confirmation first
 #   ./startup_ntnx1_vcf.sh --yes        # no prompt
+#   ./startup_ntnx1_vcf.sh --yes --vsan # wait for vCenter + vSAN Restart Cluster first
 
 export GOVC_URL="${GOVC_URL:-uk-bhr-p-vc-2.jameskilby.cloud}"
 export GOVC_USERNAME="${GOVC_USERNAME:-administrator@vsphere.local}"
@@ -26,7 +32,8 @@ NSX_PASSWORD="VMware123!VMware123!"
 # Readiness checks:
 #   sddcm     SDDC Manager API issues a token
 #   nsx       NSX management cluster status is STABLE
-#   http:FQDN any HTTP response from https://FQDN/ (the service is listening)
+#   http:FQDN https://FQDN/ answers with a status below 500 (a 5xx means the
+#             web front end is up but the service behind it isn't yet)
 #   tools     VMware Tools running in every VM of the layer
 LAYERS=(
     "SDDC Manager|uk-bhr-p-sddcm-1|sddcm|1800"
@@ -42,14 +49,20 @@ LAYERS=(
 # Extra wait after a layer reports ready, so dependent services can settle
 SETTLE_SECONDS=120
 
+# --vsan: how long to wait for vCenter, and then every host, to come up after
+# the hosts are powered on
+VCENTER_WAIT_TIMEOUT=3600
+
 ### DO NOT EDIT BEYOND HERE ###
 
 DRY_RUN=false
 ASSUME_YES=false
+VSAN=false
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=true ;;
         --yes) ASSUME_YES=true ;;
+        --vsan) VSAN=true ;;
         *) echo "Unknown option: $arg"; exit 1 ;;
     esac
 done
@@ -57,6 +70,48 @@ done
 log() { echo -e "[$(date +%H:%M:%S)] $*"; }
 
 command -v govc >/dev/null || { echo "govc not found (brew install govc)"; exit 1; }
+VSAN_POWER="$(cd "$(dirname "$0")" && pwd)/vsan_cluster_power.py"
+
+if ${VSAN}; then
+    # The hosts have just been powered on: wait for vCenter, then for every
+    # host to reconnect (maintenance mode is expected until vSAN restarts).
+    log "Waiting for ${GOVC_URL} and the hosts (up to ${VCENTER_WAIT_TIMEOUT}s)"
+    waited=0
+    while true; do
+        if govc about >/dev/null 2>&1; then
+            pending=""
+            for host in $(govc find "${CLUSTER}" -type h 2>/dev/null); do
+                [[ "$(govc object.collect -s "${host}" runtime.connectionState 2>/dev/null)" == "connected" ]] \
+                    || pending="${pending} ${host##*/}"
+            done
+            [[ -n "$(govc find "${CLUSTER}" -type h 2>/dev/null)" && -z "${pending}" ]] && break
+        fi
+        if (( waited >= VCENTER_WAIT_TIMEOUT )); then
+            log "  vCenter or the hosts still not up after ${VCENTER_WAIT_TIMEOUT}s${pending:+ (waiting for:${pending})}"
+            exit 1
+        fi
+        sleep 30
+        waited=$((waited + 30))
+    done
+    log "  vCenter and all hosts connected (${waited}s)"
+
+    cluster_id=$(govc find -i -maxdepth 0 "${CLUSTER}")
+    vsan_status=$(python3 -I "${VSAN_POWER}" status "${cluster_id}") \
+        || { log "  can't read the vSAN cluster power state: ${vsan_status}"; exit 1; }
+    if [[ "${vsan_status}" != "clusterPoweredOn" ]]; then
+        if ${DRY_RUN}; then
+            log "vSAN cluster is ${vsan_status}: a real run starts with vSAN Restart Cluster."
+            log "The pre-checks and the VM plan need the restart done first, so this dry run stops here."
+            exit 0
+        fi
+        log "vSAN Restart Cluster on ${CLUSTER##*/} (cluster is ${vsan_status})"
+        python3 -I "${VSAN_POWER}" restart "${cluster_id}" | while read -r line; do log "  ${line}"; done
+        [[ "${PIPESTATUS[0]}" == "0" ]] || { log "  vSAN Restart Cluster failed - check vCenter"; exit 1; }
+    else
+        log "vSAN cluster is already powered on"
+    fi
+fi
+
 govc about >/dev/null 2>&1 || { echo "Can't log in to ${GOVC_URL} - is vCenter up yet?"; exit 1; }
 
 vms_matching() { govc find / -type m -name "$1" 2>/dev/null | grep -v '/vcf-services-runtime-template'; }
@@ -77,7 +132,7 @@ check_ready() {
         http:*)
             local code
             code=$(curl -sk -o /dev/null --max-time 10 -w '%{http_code}' "https://${check#http:}.${DOMAIN}/")
-            [[ "${code}" != "000" ]] ;;
+            [[ "${code}" != "000" ]] && (( 10#${code} < 500 )) ;;
         tools)
             local vm
             while read -r vm; do
