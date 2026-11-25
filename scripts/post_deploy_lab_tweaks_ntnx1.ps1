@@ -13,7 +13,8 @@
 #
 # What it changes (each can be switched off below):
 #   vCenter  clear triggered vSAN alarms; silence yellow vSAN health checks
-#            (the SSDs/HBA are off the ESA HCL); disable HA admission control
+#            plus $AlwaysSilenceChecks (the SSDs/HBA are off the ESA HCL);
+#            disable HA admission control
 #   NSX      hide the telemetry agreement prompt; accept CEIP; hide the VCF
 #            Operations banner for admin; disable the
 #            logging.remote_logging_not_configured and
@@ -30,6 +31,10 @@ $VCenterUser = "administrator@vsphere.local"
 $VCenterPassword = "VMware123!VMware123!"
 $ClusterName = "ntnx1-mgmt-cl01"
 $ExpectedVsanDisks = 8
+# vSAN health checks silenced whatever their colour (TestId without the
+# com.vmware.vsan.health.test. prefix). controlleronhcl is red because the
+# LSI SAS3008 isn't on the HCL, and a red vSAN health blocks Supervisor.
+$AlwaysSilenceChecks = @("controlleronhcl")
 
 $clearVSANHealthAlarms = $true
 $silenceVSANHealthFindings = $true
@@ -85,13 +90,13 @@ if($clearVSANHealthAlarms -or $silenceVSANHealthFindings -or $disableAdmissionCo
         if($diskCount -ne $ExpectedVsanDisks) {
             My-Logger "Skipping vSAN health silencing: found ${diskCount} vSAN disks, expected ${ExpectedVsanDisks}. Fix the missing disks first (ntnx-3 HBA: full power-off)." "yellow"
         } else {
-            My-Logger "Silencing yellow vSAN health checks on ${ClusterName} (${diskCount} disks present) ..."
+            My-Logger "Silencing yellow and listed vSAN health checks on ${ClusterName} (${diskCount} disks present) ..."
             $vchs = Get-VSANView -Server $viConnection -Id "VsanVcClusterHealthSystem-vsan-cluster-health-system"
             $results = $vchs.VsanQueryVcClusterHealthSummary($cluster.ExtensionData.MoRef, $null, $null, $null, $null, $null, $null, $null, $null)
-            $silentChecks = @()
+            $silentChecks = @($AlwaysSilenceChecks)
             foreach ($group in $results.Groups) {
                 foreach ($groupTest in $group.GroupTests) {
-                    if($groupTest.TestHealth -eq "yellow") {
+                    if($groupTest.TestHealth -eq "yellow" -and $silentChecks -notcontains $groupTest.TestId.replace("com.vmware.vsan.health.test.","")) {
                         $silentChecks += $groupTest.TestId.replace("com.vmware.vsan.health.test.","")
                     }
                 }
@@ -100,7 +105,7 @@ if($clearVSANHealthAlarms -or $silenceVSANHealthFindings -or $disableAdmissionCo
                 My-Logger "  silencing: $($silentChecks -join ', ')"
                 $vchs.VsanHealthSetVsanClusterSilentChecks($cluster.ExtensionData.MoRef, $silentChecks, $null) | Out-Null
             } else {
-                My-Logger "  no yellow checks to silence"
+                My-Logger "  nothing to silence"
             }
         }
     }
