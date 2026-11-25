@@ -149,27 +149,51 @@ Other networks:
    ```
 5. Open `https://uk-bhr-p-vcfi-1.jameskilby.cloud/` → *Depot settings and binary management* → download every binary until each one shows Success.
 6. *Deploy using JSON spec* → upload [config/three-node-vsan-esa-tep-ntnx1.json](config/three-node-vsan-esa-tep-ntnx1.json). All passwords are `VMware123!VMware123!` (ESX root `VMware123!`), so change them in the JSON, the kickstarts and the scripts before using this for anything that isn't a lab. Acknowledge the CPU/HCL warnings, then deploy. Expect it to take several hours on this hardware.
-7. **Day 2: Edges + VM-Network.** First add sw-1's side of the BGP sessions. `provision-vcf.yml` only models the single UniFi peer, so do this through your Ansible/Semaphore flow (new vars or a task). Here is the RouterOS equivalent for reference:
+7. **Day 2: Edges + VM-Network.** First add sw-1's side of the BGP sessions. The [iac](https://github.com/jameskilbycloud/iac) repo's `ansible/mikrotik/provision-vcf.yml` manages them (tag `nsx_edge_bgp`, peers and networks in `host_vars/mikrotik-sw-1/vcf.yml`: `nsx_edge_bgp_peers`, `nsx_edge_accept_networks`, `bgp_advertise_blocks`):
+   ```bash
+   cd ~/Github/iac/ansible/mikrotik
+   ansible-playbook -i inventory.yml provision-vcf.yml --limit mikrotik-sw-1 --tags bgp
+   ```
+   It creates four eBGP connections from sw-1 (AS 65000) to the edges (AS 65100), edge-1a/1b on VLAN 106 and VLAN 107, and sends them only a default route. It accepts only the VPC external block (192.168.110.0/24 here, so pick yours and use it as the VPC external IP block in vCenter) and passes that block, including anything more specific inside it, on to the UniFi over the existing iBGP session. The UniFi session uses `nexthop-choice=force-self`, because otherwise the UniFi gets routes whose next hop is an edge address it can't reach. For reference, the resulting RouterOS config is:
    ```
    /routing filter rule
-   add chain=nsx-edge-in rule="if (dst in 192.168.110.0/24) { accept }" comment="NTNX1 VPC external block"
+   add chain=nsx-edge-in rule="if (dst in 192.168.110.0/24) { accept }"
    add chain=nsx-edge-in rule="reject"
-   add chain=bgp-vcf-out rule="if (dst == 192.168.110.0/24) { accept }" place-before=[find chain=bgp-vcf-out rule="reject"]
+   add chain=nsx-edge-out rule="if (dst == 0.0.0.0/0) { accept }"
+   add chain=nsx-edge-out rule="reject"
+   add chain=bgp-vcf-out rule="if (dst in 192.168.110.0/24) { accept }" place-before=[find chain=bgp-vcf-out rule="reject"]
    /routing bgp connection
+   set [find name=unifi] nexthop-choice=force-self
    add name=ntnx1-edge-1a-106 local.address=192.168.106.1 local.role=ebgp remote.address=192.168.106.2 remote.as=65100 as=65000 input.filter=nsx-edge-in output.default-originate=always output.filter-chain=nsx-edge-out
    add name=ntnx1-edge-1b-106 local.address=192.168.106.1 local.role=ebgp remote.address=192.168.106.3 remote.as=65100 as=65000 input.filter=nsx-edge-in output.default-originate=always output.filter-chain=nsx-edge-out
    add name=ntnx1-edge-1a-107 local.address=192.168.107.1 local.role=ebgp remote.address=192.168.107.2 remote.as=65100 as=65000 input.filter=nsx-edge-in output.default-originate=always output.filter-chain=nsx-edge-out
    add name=ntnx1-edge-1b-107 local.address=192.168.107.1 local.role=ebgp remote.address=192.168.107.3 remote.as=65100 as=65000 input.filter=nsx-edge-in output.default-originate=always output.filter-chain=nsx-edge-out
-   /routing filter rule
-   add chain=nsx-edge-out rule="if (dst == 0.0.0.0/0) { accept }"
-   add chain=nsx-edge-out rule="reject"
    ```
-   The edges then receive only a default route, and sw-1 accepts only the VPC external block (192.168.110.0/24 here, so pick yours and use it as the VPC external IP block in vCenter). That block is passed on to the UniFi over the existing iBGP session. Then run:
+   Do this **before** creating the edge cluster: SDDC Manager's *Verify NSX BGP Peering* step waits for all four sessions, and on 2026-11-25 it sat retrying until the sw-1 side was added. Then run:
    ```powershell
    ./scripts/day2_ntnx1_networking.ps1
    ```
-   The script validates and creates the Edge cluster through the SDDC Manager API, filling in the cluster ID itself, and adds the VLAN 105 `ntnx1-vm-network` port group. Afterwards, finish the Centralized Transit Gateway / VPC external connection in vCenter against Tier-0 `ntnx1-m01-t0`.
+   The script validates and creates the Edge cluster through the SDDC Manager API, filling in the cluster ID itself, and adds the VLAN 105 `ntnx1-vm-network` port group. Creating the edge cluster took just under an hour on 2026-11-25, including about 10 minutes waiting on BGP. The two edge VM deploys took about 9 minutes each. Afterwards, finish the Centralized Transit Gateway / VPC external connection in vCenter against Tier-0 `ntnx1-m01-t0`.
 8. Afterwards, power off and delete `uk-bhr-p-vcfi-1` and its DNS record. Optionally, add `esx-iscsi01` as supplemental storage: put the new host IQNs into TrueNAS initiator group 4 and rebuild vmk3/vmk4 (60.x/61.x) on the new VDS.
+
+### Current state (2026-11-25)
+
+Bring-up and the Day 2 edge cluster are done. The VPC external connection isn't configured yet.
+
+| Component | State |
+|---|---|
+| Management domain | `ntnx1-m01`, cluster `ntnx1-mgmt-cl01` (3 hosts, vSAN ESA, 8 disks), vCenter `uk-bhr-p-vc-2` |
+| Edge cluster | `ntnx1-m01-ec01` **ACTIVE**: `uk-bhr-p-edge-1a` / `-1b`, Medium form factor |
+| Tier-0 | `ntnx1-m01-t0`, active-active, eBGP AS 65100 to sw-1 AS 65000 on VLAN 106 and 107 (keepalive 4 s, hold 12 s, no BFD). It redistributes Tier-1 connected routes. |
+| Tier-1 | `ntnx1-m01-t1`, active-standby, advertises connected segments |
+| BGP | all four edge sessions established. The edges get a default route; sw-1 learns only prefixes inside 192.168.110.0/24 and passes them to the UniFi. sw-1 uses one best path at a time (no ECMP). |
+| Test segment | `bgp-test`, 192.168.110.240/28 (gateway .241, DHCP .243–.254) on Tier-1 `ntnx1-m01-t1`, transport zone `vcf-overlay-TZ`. `bgptestvm` (.243) is reachable from the LAN: UniFi → sw-1 (192.168.15.1) → edge (192.168.106.x) → Tier-1 → VM. |
+| VPCs | none yet. There's no 192.168.110.0/24 IP block in NSX, and the default VPC connectivity profile has no external blocks. |
+
+Notes:
+* Put overlay segments in **`vcf-overlay-TZ`**. The edges and hosts are members of that zone, not of `nsx-overlay-transportzone`.
+* Segments that should be reachable from the LAN need a subnet inside 192.168.110.0/24, because sw-1's `nsx-edge-in` filter drops anything else. The `bgp-test` /28 sits inside that block, so keep it out of the VPC external IP block, or delete the segment first.
+* SDDC Manager's *Downloading Esx metadata, vibs and vendor add-ons* task has failed on every run since October 2026, most recently 2026-11-25. It's the online depot download and doesn't affect running workloads.
 
 ### Shutting down and starting up NTNX1
 
@@ -186,7 +210,24 @@ Add `--vsan` to either script to have it do the vSAN step too, through the vSAN 
 * `shutdown_ntnx1_vcf.sh --yes --vsan` runs **Shutdown Cluster** once the VMs are off, then waits until vCenter and all three hosts have powered off.
 * `startup_ntnx1_vcf.sh --yes --vsan` can be run as soon as the hosts are powered on. It waits up to an hour for vCenter and every host to connect, runs **Restart Cluster** if the cluster isn't fully powered on, and then carries on with the pre-checks and the appliances. With `--dry-run --vsan` it reports whether a restart is needed and stops there, since the other pre-checks only pass after it.
 
-`vsan_cluster_power.py status <cluster-moref>` prints the cluster's vSAN power state (`clusterPoweredOn` when fully up). Home Assistant runs these scripts from the Homelab dashboard with `--vsan`.
+`vsan_cluster_power.py status <cluster-moref>` prints the cluster's vSAN power state (`clusterPoweredOn` when fully up).
+
+**Timings.** The first full `startup_ntnx1_vcf.sh --yes --vsan` run, on 2026-11-25 with the hosts already powered on, took 32 minutes:
+
+| Step | Time |
+|---|---|
+| vSAN Restart Cluster | 75 s |
+| SDDC Manager | 2 min |
+| NSX Manager | 6 min |
+| License Server | 3 min |
+| Management services runtime | 80 s |
+| VCF Operations | 20 s |
+| Cloud proxy | 40 s |
+| VCF Automation | 100 s |
+
+Each layer then waits a further 2 minutes for services to settle. The `http:` readiness check passes as soon as a front end answers below 500, so VCF Operations, the cloud proxy and the management services runtime can count as ready before their services are fully up. VCF Automation can take another 15–30 minutes before it accepts logins.
+
+**Home Assistant** runs both scripts, with `--vsan`, from the *VCF 9.1 Lab (NTNX1)* section of its Homelab dashboard. It has dry-run buttons, an arm switch for real runs and a live log. A real startup powers the nodes on through their BMCs first if any is off, and shows a countdown of about 35 minutes. HA keeps copies of the scripts under `vcf/` in its config repo, so update those when the scripts here change.
 
 ntnx-3's power-on is a cold boot, so its SAS3008 comes back normally; still check that all 8 SSDs are present.
 
