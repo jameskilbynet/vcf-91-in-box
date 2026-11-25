@@ -27,6 +27,7 @@ $Records = [ordered]@{
     "uk-bhr-p-vcf-flt-1"   = "192.168.100.22"   # Fleet components
     "uk-bhr-p-vcf-int-1"   = "192.168.100.23"   # Instance components
     "uk-bhr-p-vcf-lic-1"   = "192.168.100.24"   # License Server
+    "uk-bhr-p-vcf-logs-1"  = "192.168.100.25"   # Log Management (Day 2)
     "uk-bhr-p-vcf-idb-1"   = "192.168.100.27"   # Identity Broker
     "uk-bhr-p-nsx-1"       = "192.168.100.48"   # NSX VIP
     "uk-bhr-p-nsx-1a"      = "192.168.100.49"   # NSX Manager
@@ -35,6 +36,8 @@ $Records = [ordered]@{
     "uk-bhr-p-vcf-proxy-1" = "192.168.100.55"   # Ops cloud proxy
     "uk-bhr-p-vcf-asr-1"   = "192.168.100.56"   # Automation Services Runtime
     "uk-bhr-p-vcfa-1"      = "192.168.100.57"   # VCF Automation
+    "uk-bhr-p-vcfnet-1"    = "192.168.100.58"   # VCF Operations for networks platform (Day 2)
+    "uk-bhr-p-vcfnet-c1"   = "192.168.100.59"   # VCF Operations for networks collector (Day 2)
 }
 # The MSR (.33-.46) and Automation (.65-.70) node pools need no records.
 

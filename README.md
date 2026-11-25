@@ -104,6 +104,7 @@ What changed vs upstream:
 | uk-bhr-p-vcf-flt-1 | 192.168.100.22 | Fleet components |
 | uk-bhr-p-vcf-int-1 | 192.168.100.23 | Instance components |
 | uk-bhr-p-vcf-lic-1 | 192.168.100.24 | License Server |
+| uk-bhr-p-vcf-logs-1 | 192.168.100.25 | Log Management (Day 2, on VMSP) |
 | uk-bhr-p-vcf-idb-1 | 192.168.100.27 | Identity Broker |
 | — | 192.168.100.33–46 | MSR node pool |
 | uk-bhr-p-nsx-1 | 192.168.100.48 | NSX VIP |
@@ -112,6 +113,8 @@ What changed vs upstream:
 | uk-bhr-p-vcf-proxy-1 | 192.168.100.55 | Ops cloud proxy |
 | uk-bhr-p-vcf-asr-1 | 192.168.100.56 | Automation Services Runtime |
 | uk-bhr-p-vcfa-1 | 192.168.100.57 | VCF Automation |
+| uk-bhr-p-vcfnet-1 | 192.168.100.58 | VCF Operations for networks platform (Day 2) |
+| uk-bhr-p-vcfnet-c1 | 192.168.100.59 | VCF Operations for networks collector (Day 2) |
 | — | 192.168.100.65–70 | Automation node pool |
 
 Other networks:
@@ -188,9 +191,13 @@ Bring-up and the Day 2 edge cluster are done. The VPC external connection isn't 
 | Tier-1 | `ntnx1-m01-t1`, active-standby, advertises connected segments |
 | BGP | all four edge sessions established. The edges get a default route; sw-1 learns only prefixes inside 192.168.110.0/24 and passes them to the UniFi. sw-1 uses one best path at a time (no ECMP). |
 | Test segment | `bgp-test`, 192.168.110.240/28 (gateway .241, DHCP .243–.254) on Tier-1 `ntnx1-m01-t1`, transport zone `vcf-overlay-TZ`. `bgptestvm` (.243) is reachable from the LAN: UniFi → sw-1 (192.168.15.1) → edge (192.168.106.x) → Tier-1 → VM. |
+| VCF Operations for networks | Day 2, 2026-11-25: platform `uk-bhr-p-vcfnet-1` (.58, medium, 8 vCPU / 32 GB) + collector `uk-bhr-p-vcfnet-c1` (.59, 4 vCPU / 12 GB), appliances on the management network. [scripts/deploy_ops_networks_ntnx1.ps1](scripts/deploy_ops_networks_ntnx1.ps1), 40 min |
+| Log Management | Day 2, 2026-11-25: `uk-bhr-p-vcf-logs-1` (.25), small, 1 node, on the VMSP, which gained a fourth node (16 vCPU / 32 GB). [scripts/deploy_ops_logs_ntnx1.ps1](scripts/deploy_ops_logs_ntnx1.ps1), 38 min |
 | VPCs | none yet. There's no 192.168.110.0/24 IP block in NSX, and the default VPC connectivity profile has no external blocks. |
 
 Notes:
+* Day 2 components (Operations for networks, Log management) need their binaries in the VIS depot first. The bring-up download didn't include them, and a missing one fails the install with an OVF Tool 404 from `.../depot-service/content-gateway/PROD/COMP/<type>/`. Download them in VIS → Software Depot, then check `PROD/COMP/VRNI/` and `PROD/COMP/VRLI/`.
+* While Log Management adds its VMSP worker, Fleet LCM returns 503/500 for several minutes as its pods move. The install carries on, and the deploy scripts keep polling.
 * Put overlay segments in **`vcf-overlay-TZ`**. The edges and hosts are members of that zone, not of `nsx-overlay-transportzone`.
 * Segments that should be reachable from the LAN need a subnet inside 192.168.110.0/24, because sw-1's `nsx-edge-in` filter drops anything else. The `bgp-test` /28 sits inside that block, so keep it out of the VPC external IP block, or delete the segment first.
 * SDDC Manager's *Downloading Esx metadata, vibs and vendor add-ons* task has failed on every run since October 2026, most recently 2026-11-25. It's the online depot download and doesn't affect running workloads.
