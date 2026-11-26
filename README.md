@@ -234,6 +234,22 @@ Add `--vsan` to either script to have it do the vSAN step too, through the vSAN 
 
 Each layer then waits a further 2 minutes for services to settle. The `http:` readiness check passes as soon as a front end answers below 500, so VCF Operations, the cloud proxy and the management services runtime can count as ready before their services are fully up. VCF Automation can take another 15–30 minutes before it accepts logins.
 
+The first full `shutdown_ntnx1_vcf.sh --yes --vsan` run, on 2026-11-26 with Operations for networks deployed, took 24 minutes from the pre-checks to the hosts being off (each time is measured to the next 10 s poll):
+
+| Step | Time |
+|---|---|
+| VCF Automation | 4 min 20 s |
+| Operations for networks collector | 30 s |
+| Operations for networks platform | 50 s |
+| Cloud proxy | 60 s |
+| VCF Operations | 50 s |
+| Management services runtime (5 nodes) | 5 min 40 s |
+| License Server | 30 s |
+| NSX Edges | 30 s |
+| NSX Manager | 90 s |
+| SDDC Manager | 20 s |
+| vSAN Shutdown Cluster (vCenter, then the hosts) | 6 min 30 s |
+
 **Home Assistant** runs both scripts, with `--vsan`, from the *VCF 9.1 Lab (NTNX1)* section of its Homelab dashboard. It has dry-run buttons, an arm switch for real runs and a live log. A real startup powers the nodes on through their BMCs first if any is off, and shows a countdown of about 45 minutes (32 min measured before the Operations for networks layers were added). HA keeps copies of the scripts under `vcf/` in its config repo, so update those when the scripts here change.
 
 ntnx-3's power-on is a cold boot, so its SAS3008 comes back normally; still check that all 8 SSDs are present.
