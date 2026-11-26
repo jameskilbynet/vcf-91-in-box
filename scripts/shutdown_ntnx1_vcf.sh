@@ -27,6 +27,8 @@ VCF_OPS_ADMIN_URL="https://uk-bhr-p-vcfops-1.jameskilby.cloud/admin"
 # (govc find -name glob); a layer with no matching powered-on VMs is skipped.
 LAYERS=(
     "VCF Automation|uk-bhr-p-vcf-asr-1-*"
+    "VCF Operations for networks collector|ops_networks-collector-*"
+    "VCF Operations for networks platform|ops_networks-platform-*"
     "VCF Operations cloud proxy|uk-bhr-p-vcf-proxy-1"
     "VCF Operations|uk-bhr-p-vcfops-1"
     "VCF management services runtime|uk-bhr-p-vcf-msr-1-*"
@@ -64,6 +66,16 @@ powered_on_vms() {
     govc find / -type m -name "$1" -runtime.powerState poweredOn 2>/dev/null | grep -v "/${VCENTER_VM}$"
 }
 
+# Powered-on VMs that no layer covers. vSAN Shutdown Cluster would hard power
+# them off (or refuse), so they block the shutdown: add them to LAYERS.
+unmanaged_vms() {
+    local managed="" layer
+    for layer in "${LAYERS[@]}"; do
+        managed+="$(powered_on_vms "${layer#*|}")"$'\n'
+    done
+    powered_on_vms "*" | grep -vxF -f <(echo "${managed}" | grep .)
+}
+
 # Pre-checks: vSAN must not be resyncing, and every host must be connected
 log "Pre-checks"
 
@@ -98,15 +110,27 @@ log "Shutdown plan:"
 for layer in "${LAYERS[@]}"; do
     name="${layer%%|*}"; pattern="${layer#*|}"
     vms=$(powered_on_vms "${pattern}" | xargs -n1 basename 2>/dev/null | xargs)
-    printf "  %-34s %s\n" "${name}" "${vms:-(none powered on - skipped)}"
+    printf "  %-38s %s\n" "${name}" "${vms:-(none powered on - skipped)}"
 done
 if ${VSAN}; then
     cluster_id=$(govc find -i -maxdepth 0 "${CLUSTER}")
     vsan_status=$(python3 -I "${VSAN_POWER}" status "${cluster_id}") \
         || { log "  can't read the vSAN cluster power state: ${vsan_status}"; exit 1; }
-    printf "  %-34s %s\n" "vCenter + vSAN + hosts" "vSAN Shutdown Cluster via the API (now ${vsan_status})"
+    printf "  %-38s %s\n" "vCenter + vSAN + hosts" "vSAN Shutdown Cluster via the API (now ${vsan_status})"
 else
-    printf "  %-34s %s\n" "vCenter + vSAN + hosts" "vSAN Shutdown Cluster wizard (manual, see below)"
+    printf "  %-38s %s\n" "vCenter + vSAN + hosts" "vSAN Shutdown Cluster wizard (manual, see below)"
+fi
+
+unmanaged=$(unmanaged_vms)
+if [[ -n "${unmanaged}" ]]; then
+    log "Powered-on VMs that no layer covers (add them to LAYERS, or shut them down first):"
+    echo "${unmanaged}" | xargs -n1 basename | sed 's/^/    /'
+    if ${DRY_RUN}; then
+        log "A real run would stop here, before shutting anything down"
+    else
+        log "Not shutting anything down until they're covered"
+    fi
+    exit 1
 fi
 
 if ${DRY_RUN}; then
@@ -160,6 +184,12 @@ for layer in "${LAYERS[@]}"; do
     log "  ${name} is off (${waited}s)"
 done
 
+still_on=$(powered_on_vms "*")
+if [[ -n "${still_on}" ]]; then
+    log "These VMs are still powered on: $(echo "${still_on}" | xargs -n1 basename | xargs)"
+    log "Stopping before vCenter/vSAN - shut them down, then re-run this script"
+    exit 1
+fi
 log "All VCF VMs are off. Only ${VCENTER_VM} is still running."
 
 if ${VSAN}; then

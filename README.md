@@ -204,12 +204,12 @@ Notes:
 
 ### Shutting down and starting up NTNX1
 
-[scripts/shutdown_ntnx1_vcf.sh](scripts/shutdown_ntnx1_vcf.sh) guest-shuts-down the VCF VMs through `uk-bhr-p-vc-2`, one layer at a time and top-down. The order is VCF Automation → cloud proxy → VCF Operations → management services runtime → License Server → NSX Edges → NSX Manager → SDDC Manager, and it waits for each layer to power off before starting the next. Before starting, it checks that every host is connected and that vSAN isn't resyncing. Run it with `--dry-run` first. It stops at vCenter: finish with **vSAN → Shutdown Cluster** on `ntnx1-mgmt-cl01`, which shuts down vCenter last and powers off the hosts.
+[scripts/shutdown_ntnx1_vcf.sh](scripts/shutdown_ntnx1_vcf.sh) guest-shuts-down the VCF VMs through `uk-bhr-p-vc-2`, one layer at a time and top-down. The order is VCF Automation → Operations for networks (collector, then platform) → cloud proxy → VCF Operations → management services runtime → License Server → NSX Edges → NSX Manager → SDDC Manager, and it waits for each layer to power off before starting the next. Before starting, it checks that every host is connected and that vSAN isn't resyncing, and it refuses to run while any powered-on VM other than vCenter isn't in one of its layers (vSAN Shutdown Cluster would otherwise power it off hard). When you add a component, add it to `LAYERS` in both scripts; the startup plan lists VMs that no layer covers. Run it with `--dry-run` first. It stops at vCenter: finish with **vSAN → Shutdown Cluster** on `ntnx1-mgmt-cl01`, which shuts down vCenter last and powers off the hosts.
 
 To start up again:
 1. Power on the hosts.
 2. Wait for vCenter, then run **vSAN → Restart Cluster**.
-3. Run [scripts/startup_ntnx1_vcf.sh](scripts/startup_ntnx1_vcf.sh) (`--dry-run` first). It checks that every host is connected and out of maintenance mode, that all 8 vSAN disks are present and that no vSAN objects are inaccessible. Then it powers the appliances on bottom-up: SDDC Manager → NSX → Edges → License Server → management services runtime → VCF Operations → cloud proxy → VCF Automation. It waits for each one to answer: the SDDC Manager API token, NSX cluster `STABLE`, or the service's HTTPS endpoint answering with a status below 500.
+3. Run [scripts/startup_ntnx1_vcf.sh](scripts/startup_ntnx1_vcf.sh) (`--dry-run` first). It checks that every host is connected and out of maintenance mode, that all 8 vSAN disks are present and that no vSAN objects are inaccessible. Then it powers the appliances on bottom-up: SDDC Manager → NSX → Edges → License Server → management services runtime → VCF Operations → cloud proxy → Operations for networks (platform, then collector) → VCF Automation. It waits for each one to answer: the SDDC Manager API token, NSX cluster `STABLE`, or the service's HTTPS endpoint answering with a status below 500.
 
 #### Automating the vSAN steps (`--vsan`)
 
@@ -219,22 +219,45 @@ Add `--vsan` to either script to have it do the vSAN step too, through the vSAN 
 
 `vsan_cluster_power.py status <cluster-moref>` prints the cluster's vSAN power state (`clusterPoweredOn` when fully up).
 
-**Timings.** The first full `startup_ntnx1_vcf.sh --yes --vsan` run, on 2026-11-25 with the hosts already powered on, took 32 minutes:
+**Timings.** Full `startup_ntnx1_vcf.sh --yes --vsan` runs. On 2026-11-25 the hosts were already on; on 2026-11-26 the run started from a cold lab with Operations for networks deployed, and the hosts were powered on through their BMCs. Times are wall clock, before each layer's settle wait:
 
-| Step | Time |
-|---|---|
-| vSAN Restart Cluster | 75 s |
-| SDDC Manager | 2 min |
-| NSX Manager | 6 min |
-| License Server | 3 min |
-| Management services runtime | 80 s |
-| VCF Operations | 20 s |
-| Cloud proxy | 40 s |
-| VCF Automation | 100 s |
+| Step | 2026-11-25 | 2026-11-26 |
+|---|---|---|
+| Host power-on → vCenter and hosts connected | — | about 10 min |
+| vSAN Restart Cluster | 75 s | 4 min 15 s |
+| SDDC Manager | 2 min | 2 min 10 s |
+| NSX Manager | 6 min | 6 min 30 s |
+| NSX Edges | — | 40 s |
+| License Server | 3 min | 2 min 55 s |
+| Management services runtime | 80 s | 1 min 50 s |
+| VCF Operations | 20 s | 30 s |
+| Cloud proxy | 40 s | 50 s |
+| Operations for networks platform | — | 30 s |
+| Operations for networks collector | — | 20 s |
+| VCF Automation | 100 s | 4 min 5 s |
+| **Total** | **32 min** | **about 55 min** (about 10 min to vCenter + 45 min script) |
+
+The 2026-11-26 total leaves out a first attempt that stopped at the vSAN step, because vCenter's vSAN service was still answering 503. The startup now retries until it answers. Right after startup, NSX raised *fail to stream metrics to VCF Ops data platform* (`uk-bhr-p-vcf-int-1`) and the VCF Operations data platform adapter reported failed collections. Both cleared on their own within about 6 minutes, at the next collection. The hosts showed yellow after boot because of the CVE-2018-3646 (L1TF) hyperthreading warning on these Haswell CPUs. `UserVars.SuppressHyperthreadWarning=1` now hides it: it was set on 2026-11-26, and the post-deploy tweaks script sets it too.
 
 Each layer then waits a further 2 minutes for services to settle. The `http:` readiness check passes as soon as a front end answers below 500, so VCF Operations, the cloud proxy and the management services runtime can count as ready before their services are fully up. VCF Automation can take another 15–30 minutes before it accepts logins.
 
-**Home Assistant** runs both scripts, with `--vsan`, from the *VCF 9.1 Lab (NTNX1)* section of its Homelab dashboard. It has dry-run buttons, an arm switch for real runs and a live log. A real startup powers the nodes on through their BMCs first if any is off, and shows a countdown of about 35 minutes. HA keeps copies of the scripts under `vcf/` in its config repo, so update those when the scripts here change.
+The first full `shutdown_ntnx1_vcf.sh --yes --vsan` run, on 2026-11-26 with Operations for networks deployed, took 24 minutes from the pre-checks to the hosts being off (each time is measured to the next 10 s poll):
+
+| Step | Time |
+|---|---|
+| VCF Automation | 4 min 20 s |
+| Operations for networks collector | 30 s |
+| Operations for networks platform | 50 s |
+| Cloud proxy | 60 s |
+| VCF Operations | 50 s |
+| Management services runtime (5 nodes) | 5 min 40 s |
+| License Server | 30 s |
+| NSX Edges | 30 s |
+| NSX Manager | 90 s |
+| SDDC Manager | 20 s |
+| vSAN Shutdown Cluster (vCenter, then the hosts) | 6 min 30 s |
+
+**Home Assistant** runs both scripts, with `--vsan`, from the *VCF 9.1 Lab (NTNX1)* section of its Homelab dashboard. It has dry-run buttons, an arm switch for real runs and a live log. A real startup powers the nodes on through their BMCs first if any is off, and shows a countdown of about 45 minutes (32 min measured before the Operations for networks layers were added). HA keeps copies of the scripts under `vcf/` in its config repo, so update those when the scripts here change.
 
 ntnx-3's power-on is a cold boot, so its SAS3008 comes back normally; still check that all 8 SSDs are present.
 
@@ -244,7 +267,7 @@ ntnx-3's power-on is a cold boot, so its SAS3008 comes back normally; still chec
 
 There are a number of [post-VCF deployment optimizations](https://williamlam.com/2026/04/automating-lab-optimizations-for-post-deployment-of-vmware-cloud-foundation-vcf.html) that should be run for lab environments. You can refer to the linked blog post and run the PowerShell script `vcf-post-deploy-lab-tweaks.ps1`.
 
-For NTNX1, use [scripts/post_deploy_lab_tweaks_ntnx1.ps1](scripts/post_deploy_lab_tweaks_ntnx1.ps1), an adapted copy with NTNX1's endpoints. It targets `ntnx1-mgmt-cl01` by name and leaves CEIP accepted, as upstream does. Run it only after the cluster is healthy: it silences every vSAN health check that's yellow at the time, plus those in `$AlwaysSilenceChecks` (`controlleronhcl`, red because the SAS3008 isn't on the HCL, which blocks Supervisor), so it skips that step unless all 8 vSAN disks are present. The other changes are disabling HA admission control, clearing triggered vSAN alarms, hiding the NSX telemetry prompt and VCF Operations banner, disabling the NSX `logging.remote_logging_not_configured` and `capacity.minimum_capacity_threshold` alarms, and setting NSX backups to every 12 hours. The script header says how to undo each one.
+For NTNX1, use [scripts/post_deploy_lab_tweaks_ntnx1.ps1](scripts/post_deploy_lab_tweaks_ntnx1.ps1), an adapted copy with NTNX1's endpoints. It targets `ntnx1-mgmt-cl01` by name and leaves CEIP accepted, as upstream does. Run it only after the cluster is healthy: it silences every vSAN health check that's yellow at the time, plus those in `$AlwaysSilenceChecks` (`controlleronhcl`, red because the SAS3008 isn't on the HCL, which blocks Supervisor), so it skips that step unless all 8 vSAN disks are present. The other changes are disabling HA admission control, suppressing the hosts' CVE-2018-3646 (L1TF) hyperthreading warning, clearing triggered vSAN alarms, hiding the NSX telemetry prompt and VCF Operations banner, disabling the NSX `logging.remote_logging_not_configured` and `capacity.minimum_capacity_threshold` alarms, and setting NSX backups to every 12 hours. The script header says how to undo each one.
 
 ![](screenshots/screenshot-16.png)
 
