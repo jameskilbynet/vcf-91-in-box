@@ -66,6 +66,8 @@ powered_on_vms() {
     govc find / -type m -name "$1" -runtime.powerState poweredOn 2>/dev/null | grep -v "/${VCENTER_VM}$"
 }
 
+boot_time() { govc object.collect -s "$1" runtime.bootTime 2>/dev/null; }
+
 # Powered-on VMs that no layer covers. vSAN Shutdown Cluster would hard power
 # them off (or refuse), so they block the shutdown: add them to LAYERS.
 unmanaged_vms() {
@@ -152,6 +154,9 @@ for layer in "${LAYERS[@]}"; do
     [[ -z "${vms}" ]] && continue
 
     log "Shutting down ${name}: $(echo "${vms}" | xargs -n1 basename | xargs)"
+    # "VM|boot time" of every VM shut down in this layer, to spot one that
+    # boots again (see the wait loop below)
+    handled=$(while read -r vm; do echo "${vm}|$(boot_time "${vm}")"; done <<< "${vms}")
     while read -r vm; do
         # Guest shutdown needs VMware Tools; fall back to a hard power off only if allowed
         if ! govc vm.power -s "${vm}" >/dev/null 2>&1; then
@@ -177,6 +182,21 @@ for layer in "${LAYERS[@]}"; do
                 log "  stopping - check their consoles, then re-run this script (it skips what's already off)"
                 exit 1
             fi
+        fi
+        # A VM that has booted again since we shut it down, or a new one in
+        # the layer, gets shut down (again). The management services
+        # runtime's control plane (Cluster API) powers its worker nodes back on
+        # while it's still up; once it's off too, they stay off.
+        if (( waited % 30 == 0 )); then
+            while read -r vm; do
+                [[ -z "${vm}" ]] && continue
+                bt=$(boot_time "${vm}")
+                grep -qxF "${vm}|${bt}" <<< "${handled}" && continue
+                [[ "$(govc object.collect -s "${vm}" guest.toolsRunningStatus 2>/dev/null)" == "guestToolsRunning" ]] || continue
+                log "  ${vm##*/} is on again (booted ${bt:-?}) - shutting it down again"
+                govc vm.power -s "${vm}" >/dev/null 2>&1 || log "  guest shutdown of ${vm##*/} failed - will retry"
+                handled+=$'\n'"${vm}|${bt}"
+            done <<< "$(powered_on_vms "${pattern}")"
         fi
         sleep 10
         waited=$((waited + 10))
