@@ -14,14 +14,17 @@
 # What it changes (each can be switched off below):
 #   vCenter  clear triggered vSAN alarms; silence yellow vSAN health checks
 #            plus $AlwaysSilenceChecks (the SSDs/HBA are off the ESA HCL);
-#            disable HA admission control
+#            disable HA admission control; suppress the hosts' CVE-2018-3646
+#            (L1TF) hyperthreading warning (Haswell, mitigation off)
 #   NSX      hide the telemetry agreement prompt; accept CEIP; hide the VCF
 #            Operations banner for admin; disable the
 #            logging.remote_logging_not_configured and
 #            capacity.minimum_capacity_threshold alarms; backups every 12 h
 #
 # Undo: Cluster > Configure > vSphere Availability (admission control),
-# Cluster > Monitor > vSAN > Skyline Health (silenced checks), and the same
+# Cluster > Monitor > vSAN > Skyline Health (silenced checks), host >
+# Configure > Advanced System Settings > UserVars.SuppressHyperthreadWarning
+# back to 0 (L1TF warning), and the same
 # NSX APIs / UI settings. Needs pwsh 7 with VMware PowerCLI (incl. the vSAN
 # module).
 
@@ -39,6 +42,9 @@ $AlwaysSilenceChecks = @("controlleronhcl")
 $clearVSANHealthAlarms = $true
 $silenceVSANHealthFindings = $true
 $disableAdmissionControl = $true
+# The hosts' E5-2640 v3 CPUs are L1TF-affected and run without the
+# hyperthreading mitigation, so every host boots yellow with this warning.
+$suppressHyperthreadWarning = $true
 
 # NSX (cluster VIP)
 $NSXFQDN = "uk-bhr-p-nsx-1.jameskilby.cloud"
@@ -66,7 +72,7 @@ Function My-Logger {
     Write-Host -ForegroundColor $color " $message"
 }
 
-if($clearVSANHealthAlarms -or $silenceVSANHealthFindings -or $disableAdmissionControl) {
+if($clearVSANHealthAlarms -or $silenceVSANHealthFindings -or $disableAdmissionControl -or $suppressHyperthreadWarning) {
     $viConnection = Connect-VIServer $VCenterFQDN -User $VCenterUser -Password $VCenterPassword -WarningAction SilentlyContinue
     $cluster = Get-Cluster -Server $viConnection -Name $ClusterName -ErrorAction Stop
 
@@ -118,6 +124,15 @@ if($clearVSANHealthAlarms -or $silenceVSANHealthFindings -or $disableAdmissionCo
         $spec.DasConfig = $dasSpec
         $task = $cluster.ExtensionData.ReconfigureComputeResource_Task($spec, $true)
         Get-Task -Server $viConnection -Id ("Task-$($task.Value)") | Wait-Task | Out-Null
+    }
+
+    if($suppressHyperthreadWarning) {
+        My-Logger "Suppressing the CVE-2018-3646 hyperthreading warning on ${ClusterName}'s hosts ..."
+        foreach ($vmhost in ($cluster | Get-VMHost)) {
+            Get-AdvancedSetting -Entity $vmhost -Name UserVars.SuppressHyperthreadWarning |
+                Set-AdvancedSetting -Value 1 -Confirm:$false | Out-Null
+            My-Logger "  $($vmhost.Name)"
+        }
     }
 
     Disconnect-VIServer -Server $viConnection -Confirm:$false | Out-Null
