@@ -219,18 +219,25 @@ Add `--vsan` to either script to have it do the vSAN step too, through the vSAN 
 
 `vsan_cluster_power.py status <cluster-moref>` prints the cluster's vSAN power state (`clusterPoweredOn` when fully up).
 
-**Timings.** The first full `startup_ntnx1_vcf.sh --yes --vsan` run, on 2026-11-25 with the hosts already powered on, took 32 minutes:
+**Timings.** Full `startup_ntnx1_vcf.sh --yes --vsan` runs. On 2026-11-25 the hosts were already on; on 2026-11-26 the run started from a cold lab with Operations for networks deployed, and the hosts were powered on through their BMCs. Times are wall clock, before each layer's settle wait:
 
-| Step | Time |
-|---|---|
-| vSAN Restart Cluster | 75 s |
-| SDDC Manager | 2 min |
-| NSX Manager | 6 min |
-| License Server | 3 min |
-| Management services runtime | 80 s |
-| VCF Operations | 20 s |
-| Cloud proxy | 40 s |
-| VCF Automation | 100 s |
+| Step | 2026-11-25 | 2026-11-26 |
+|---|---|---|
+| Host power-on → vCenter and hosts connected | — | about 10 min |
+| vSAN Restart Cluster | 75 s | 4 min 15 s |
+| SDDC Manager | 2 min | 2 min 10 s |
+| NSX Manager | 6 min | 6 min 30 s |
+| NSX Edges | — | 40 s |
+| License Server | 3 min | 2 min 55 s |
+| Management services runtime | 80 s | 1 min 50 s |
+| VCF Operations | 20 s | 30 s |
+| Cloud proxy | 40 s | 50 s |
+| Operations for networks platform | — | 30 s |
+| Operations for networks collector | — | 20 s |
+| VCF Automation | 100 s | 4 min 5 s |
+| **Total** | **32 min** | **about 55 min** (about 10 min to vCenter + 45 min script) |
+
+The 2026-11-26 total leaves out a first attempt that stopped at the vSAN step, because vCenter's vSAN service was still answering 503. The startup now retries until it answers. Right after startup, NSX raised *fail to stream metrics to VCF Ops data platform* (`uk-bhr-p-vcf-int-1`) and the VCF Operations data platform adapter reported failed collections. Both cleared on their own within about 6 minutes, at the next collection. The hosts show yellow after every boot because of the CVE-2018-3646 (L1TF) hyperthreading warning on these Haswell CPUs.
 
 Each layer then waits a further 2 minutes for services to settle. The `http:` readiness check passes as soon as a front end answers below 500, so VCF Operations, the cloud proxy and the management services runtime can count as ready before their services are fully up. VCF Automation can take another 15–30 minutes before it accepts logins.
 
