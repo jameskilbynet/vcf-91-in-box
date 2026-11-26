@@ -82,8 +82,15 @@ class Client:
             with self.opener.open(req, timeout=timeout) as resp:
                 return ET.fromstring(resp.read())
         except urllib.error.HTTPError as e:  # SOAP faults come back as HTTP 500
-            root = ET.fromstring(e.read())
+            # A service that isn't up yet (vsan-health just after vCenter
+            # boots) answers 503 with an HTML page, not a SOAP fault.
+            try:
+                root = ET.fromstring(e.read())
+            except ET.ParseError:
+                die(f"HTTP {e.code} {e.reason} from {path}")
             die(text(root, "faultstring", f"HTTP {e.code}"))
+        except (urllib.error.URLError, OSError) as e:
+            die(f"can't reach {self.base}{path}: {getattr(e, 'reason', e)}")
 
     def vim(self, body, **kw):
         return self.call("/sdk", VIM_ACTION, body, **kw)

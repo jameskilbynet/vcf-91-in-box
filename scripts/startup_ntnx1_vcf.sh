@@ -98,8 +98,17 @@ if ${VSAN}; then
     log "  vCenter and all hosts connected (${waited}s)"
 
     cluster_id=$(govc find -i -maxdepth 0 "${CLUSTER}")
-    vsan_status=$(python3 -I "${VSAN_POWER}" status "${cluster_id}") \
-        || { log "  can't read the vSAN cluster power state: ${vsan_status}"; exit 1; }
+    # vCenter's vSAN health service starts a few minutes after the vSphere
+    # API does and answers 503 until then, so keep asking.
+    until vsan_status=$(python3 -I "${VSAN_POWER}" status "${cluster_id}"); do
+        if (( waited >= VCENTER_WAIT_TIMEOUT )); then
+            log "  can't read the vSAN cluster power state: ${vsan_status}"
+            exit 1
+        fi
+        log "  vSAN API not ready yet (${vsan_status}), retrying"
+        sleep 30
+        waited=$((waited + 30))
+    done
     if [[ "${vsan_status}" != "clusterPoweredOn" ]]; then
         if ${DRY_RUN}; then
             log "vSAN cluster is ${vsan_status}: a real run starts with vSAN Restart Cluster."
