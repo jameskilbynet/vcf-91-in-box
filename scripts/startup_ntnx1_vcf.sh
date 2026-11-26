@@ -43,6 +43,8 @@ LAYERS=(
     "VCF management services runtime|uk-bhr-p-vcf-msr-1-*|http:uk-bhr-p-vcf-msr-1|2700"
     "VCF Operations|uk-bhr-p-vcfops-1|http:uk-bhr-p-vcfops-1|1800"
     "VCF Operations cloud proxy|uk-bhr-p-vcf-proxy-1|http:uk-bhr-p-vcf-proxy-1|1200"
+    "VCF Operations for networks platform|ops_networks-platform-*|http:uk-bhr-p-vcfnet-1|1800"
+    "VCF Operations for networks collector|ops_networks-collector-*|tools|900"
     "VCF Automation|uk-bhr-p-vcf-asr-1-*|http:uk-bhr-p-vcfa-1|3600"
 )
 
@@ -177,11 +179,21 @@ for layer in "${LAYERS[@]}"; do
     all=$(vms_matching "${pattern}" | xargs -n1 basename 2>/dev/null | xargs)
     off=$(powered_off_vms "${pattern}" | xargs -n1 basename 2>/dev/null | xargs)
     if [[ -z "${all}" ]]; then
-        printf "  %-34s %s\n" "${name}" "(no VMs - skipped)"
+        printf "  %-38s %s\n" "${name}" "(no VMs - skipped)"
     else
-        printf "  %-34s %s\n" "${name}" "${all}${off:+  [to power on: ${off}]}"
+        printf "  %-38s %s\n" "${name}" "${all}${off:+  [to power on: ${off}]}"
     fi
 done
+# VMs no layer covers (vCenter aside): this script won't start them, and the
+# shutdown script refuses to run while they're on, so add them to LAYERS.
+managed=""
+for layer in "${LAYERS[@]}"; do
+    IFS='|' read -r name pattern check timeout <<< "${layer}"
+    managed+="$(vms_matching "${pattern}")"$'\n'
+done
+unmanaged=$(vms_matching "*" | grep -v '/uk-bhr-p-vc-2$' | grep -vxF -f <(echo "${managed}" | grep .) \
+    | xargs -n1 basename 2>/dev/null | xargs)
+[[ -n "${unmanaged}" ]] && printf "  %-38s %s\n" "Not in any layer (not started)" "${unmanaged}"
 
 if ${DRY_RUN}; then
     log "Dry run - nothing changed"

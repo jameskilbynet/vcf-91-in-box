@@ -204,12 +204,12 @@ Notes:
 
 ### Shutting down and starting up NTNX1
 
-[scripts/shutdown_ntnx1_vcf.sh](scripts/shutdown_ntnx1_vcf.sh) guest-shuts-down the VCF VMs through `uk-bhr-p-vc-2`, one layer at a time and top-down. The order is VCF Automation → cloud proxy → VCF Operations → management services runtime → License Server → NSX Edges → NSX Manager → SDDC Manager, and it waits for each layer to power off before starting the next. Before starting, it checks that every host is connected and that vSAN isn't resyncing. Run it with `--dry-run` first. It stops at vCenter: finish with **vSAN → Shutdown Cluster** on `ntnx1-mgmt-cl01`, which shuts down vCenter last and powers off the hosts.
+[scripts/shutdown_ntnx1_vcf.sh](scripts/shutdown_ntnx1_vcf.sh) guest-shuts-down the VCF VMs through `uk-bhr-p-vc-2`, one layer at a time and top-down. The order is VCF Automation → Operations for networks (collector, then platform) → cloud proxy → VCF Operations → management services runtime → License Server → NSX Edges → NSX Manager → SDDC Manager, and it waits for each layer to power off before starting the next. Before starting, it checks that every host is connected and that vSAN isn't resyncing, and it refuses to run while any powered-on VM other than vCenter isn't in one of its layers (vSAN Shutdown Cluster would otherwise power it off hard). When you add a component, add it to `LAYERS` in both scripts; the startup plan lists VMs that no layer covers. Run it with `--dry-run` first. It stops at vCenter: finish with **vSAN → Shutdown Cluster** on `ntnx1-mgmt-cl01`, which shuts down vCenter last and powers off the hosts.
 
 To start up again:
 1. Power on the hosts.
 2. Wait for vCenter, then run **vSAN → Restart Cluster**.
-3. Run [scripts/startup_ntnx1_vcf.sh](scripts/startup_ntnx1_vcf.sh) (`--dry-run` first). It checks that every host is connected and out of maintenance mode, that all 8 vSAN disks are present and that no vSAN objects are inaccessible. Then it powers the appliances on bottom-up: SDDC Manager → NSX → Edges → License Server → management services runtime → VCF Operations → cloud proxy → VCF Automation. It waits for each one to answer: the SDDC Manager API token, NSX cluster `STABLE`, or the service's HTTPS endpoint answering with a status below 500.
+3. Run [scripts/startup_ntnx1_vcf.sh](scripts/startup_ntnx1_vcf.sh) (`--dry-run` first). It checks that every host is connected and out of maintenance mode, that all 8 vSAN disks are present and that no vSAN objects are inaccessible. Then it powers the appliances on bottom-up: SDDC Manager → NSX → Edges → License Server → management services runtime → VCF Operations → cloud proxy → Operations for networks (platform, then collector) → VCF Automation. It waits for each one to answer: the SDDC Manager API token, NSX cluster `STABLE`, or the service's HTTPS endpoint answering with a status below 500.
 
 #### Automating the vSAN steps (`--vsan`)
 
@@ -234,7 +234,7 @@ Add `--vsan` to either script to have it do the vSAN step too, through the vSAN 
 
 Each layer then waits a further 2 minutes for services to settle. The `http:` readiness check passes as soon as a front end answers below 500, so VCF Operations, the cloud proxy and the management services runtime can count as ready before their services are fully up. VCF Automation can take another 15–30 minutes before it accepts logins.
 
-**Home Assistant** runs both scripts, with `--vsan`, from the *VCF 9.1 Lab (NTNX1)* section of its Homelab dashboard. It has dry-run buttons, an arm switch for real runs and a live log. A real startup powers the nodes on through their BMCs first if any is off, and shows a countdown of about 35 minutes. HA keeps copies of the scripts under `vcf/` in its config repo, so update those when the scripts here change.
+**Home Assistant** runs both scripts, with `--vsan`, from the *VCF 9.1 Lab (NTNX1)* section of its Homelab dashboard. It has dry-run buttons, an arm switch for real runs and a live log. A real startup powers the nodes on through their BMCs first if any is off, and shows a countdown of about 45 minutes (32 min measured before the Operations for networks layers were added). HA keeps copies of the scripts under `vcf/` in its config repo, so update those when the scripts here change.
 
 ntnx-3's power-on is a cold boot, so its SAS3008 comes back normally; still check that all 8 SSDs are present.
 
